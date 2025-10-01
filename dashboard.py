@@ -29,6 +29,13 @@ with tab_energy:
     tab_energy.subheader("Example of energy consumption data")
     df = rng(0).standard_normal((10, 1))
     tab_energy.line_chart(df, color="#f178a1")
+    """
+    Validates battery status throughout the bus schedule and adds state of charge (SOC) as a column.
+    Returns rows where SOC drops below the minimum.
+    """
+    
+    
+    
     
     
 # TBE SCHEDULE TAB
