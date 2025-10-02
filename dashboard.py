@@ -20,6 +20,7 @@ df_schedule = st.file_uploader(
     " 1) Upload your bus schedule file (CSV or Excel)",
     type=["csv", "xlsx"])
 
+df_distancematrix = pd.read_excel("distancematrix.xlsx")
 
 # THE TABS
 tab_schedule, tab_energy= st.tabs(["Bus schedule", "Energy consumption"])
@@ -33,7 +34,14 @@ with tab_energy:
     Validates battery status throughout the bus schedule and adds state of charge (SOC) as a column.
     Returns rows where SOC drops below the minimum.
     """
-    
+
+        
+
+        
+        
+        
+        
+        
     
     
     
