@@ -2,12 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+# command to see website: streamlit run dashboard.py
+
 # Pagina-instellingen
 st.set_page_config(page_title="Bus Scheduling Dashboard", layout="wide")
 st.title("🚌 Bus plan analysis")
 
 # Sidebar: upload Excel-bestand
-uploaded_file = st.sidebar.file_uploader("Upload het busplan (Excel)", type=["xlsx"])
+uploaded_file = st.sidebar.file_uploader("1) Upload het busplan (Excel)", type=["xlsx"])
 
 # Tabs bovenaan
 tab_gantt, tab_visuals, tab_analysis = st.tabs(["📊 Gantt Chart", "📈 Visualisaties", "🔍 Analyse"])
@@ -44,6 +46,7 @@ def plot_gantt_chart(uploaded_file):
 
     # Layout tweaks
     fig.update_yaxes(showticklabels=False)
+    fig.update_xaxes(range=["00:00:00", "23:59:59"]) # Zorg dat de x-as altijd 24 uur toont en dat de gantt chart niet zo'n zoomed-in view heeft
     fig.update_traces(marker=dict(line=dict(color='black', width=1)), width=0.3)
     fig.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=20))
 
@@ -67,12 +70,5 @@ with tab_visuals:
 with tab_analysis:
     st.subheader("🔍 Analyse")
     st.write("Hier kun je inzichten tonen, zoals gemiddelde reistijd, idle-tijd, etc.")
-st.title("Bus Scheduling & Energy Dashboard")
-st.write(
-    "1) Upload your bus schedule file below. "
-    "Then switch between the Schedule and Energy tabs to view the cleaned table, "
-)
     
-    
-    
-    
+print("test")
