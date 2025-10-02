@@ -67,3 +67,12 @@ with tab_visuals:
 with tab_analysis:
     st.subheader("🔍 Analyse")
     st.write("Hier kun je inzichten tonen, zoals gemiddelde reistijd, idle-tijd, etc.")
+st.title("Bus Scheduling & Energy Dashboard")
+st.write(
+    "1) Upload your bus schedule file below. "
+    "Then switch between the Schedule and Energy tabs to view the cleaned table, "
+)
+    
+    
+    
+    
