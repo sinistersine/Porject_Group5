@@ -74,6 +74,8 @@ with tab_analysis:
 
 
 # Tab 4: Fouten
+# hier kunnen we alle constraints in zetten waar alle data aan moet voldoen
+# en als er iets niet klopt, dat dat hier getoond wordt
 with tab_errors:
     st.subheader("🚨 Fouten")
     st.write("Hier kun je een lijst tonen van alle fouten die zijn opgetreden tijdens de planning.")
