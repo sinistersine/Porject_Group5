@@ -71,6 +71,45 @@ with tab_visuals:
 with tab_analysis:
     st.subheader("🔍 Analyse")
     st.write("Hier kun je inzichten tonen, zoals gemiddelde reistijd, idle-tijd, etc.")
+    if uploaded_file:
+        df = pd.read_excel(uploaded_file, sheet_name="Sheet1")
+
+        # Kolommen naar datetime
+        df['start time'] = pd.to_datetime(df['start time'], format="%H:%M:%S")
+        df['end time']   = pd.to_datetime(df['end time'],   format="%H:%M:%S")
+
+        # ---- tijd-analyses ----
+        df['duration_minutes'] = (df['end time'] - df['start time']).dt.total_seconds() / 60
+        avg_duration = df.groupby('activity', as_index=False)['duration_minutes'].mean()
+        st.write("### Gemiddelde duur per activiteit (in minuten)")
+        st.dataframe(avg_duration)
+
+        total_duration_per_bus = (df.groupby('bus', as_index=False)['duration_minutes']
+                                    .sum()
+                                    .rename(columns={'duration_minutes': 'total_duration_minutes'}))
+        st.write("### Totale duur per bus (in minuten)")
+        st.dataframe(total_duration_per_bus)
+
+        # ---- energie-analyses (alles BINNEN de if uploaded_file) ----
+        if 'energy consumption' in df.columns:
+            df['energy consumption'] = pd.to_numeric(df['energy consumption'], errors='coerce').fillna(0)
+
+            per_bus = df.groupby('bus', as_index=False).agg(
+                verbruik_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
+                geladen_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
+                netto_kWh   =('energy consumption', 'sum'),
+            )
+
+            BATTERY_KWH = 300.0  # pas aan naar echte cap
+            per_bus['eind_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
+
+            st.write("### Energie per bus (kWh) + eind-SOC schatting")
+            st.dataframe(per_bus.sort_values('netto_kWh', ascending=False), use_container_width=True)
+        else:
+            st.info("Kolom 'energy consumption' niet gevonden in het bestand.")
+    else:
+        st.info("Upload een Excel-bestand in de sidebar om de analyse te zien.")
+
 
 
 # Tab 4: Fouten
