@@ -1,3 +1,4 @@
+from ftplib import all_errors
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -12,7 +13,7 @@ st.title("🚌 Bus plan analysis")
 uploaded_file = st.sidebar.file_uploader("1) Upload het busplan (Excel)", type=["xlsx"])
 
 # Tabs bovenaan
-tab_gantt, tab_visuals, tab_analysis = st.tabs(["📊 Gantt Chart", "📈 Visualisaties", "🔍 Analyse"])
+tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt Chart", "📈 Visualisaties", "🔍 Analyse", "🚨 Fouten"])
 
 # Functie om Gantt Chart te maken
 def plot_gantt_chart(uploaded_file):
@@ -70,5 +71,10 @@ with tab_visuals:
 with tab_analysis:
     st.subheader("🔍 Analyse")
     st.write("Hier kun je inzichten tonen, zoals gemiddelde reistijd, idle-tijd, etc.")
-    
+
+
+# Tab 4: Fouten
+with tab_errors:
+    st.subheader("🚨 Fouten")
+    st.write("Hier kun je een lijst tonen van alle fouten die zijn opgetreden tijdens de planning.")
 print("test")
