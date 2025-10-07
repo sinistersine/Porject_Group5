@@ -118,4 +118,3 @@ with tab_analysis:
 with tab_errors:
     st.subheader("🚨 Fouten")
     st.write("Hier kun je een lijst tonen van alle fouten die zijn opgetreden tijdens de planning.")
-print("test")
