@@ -112,10 +112,10 @@ def plot_gantt_interactive(df, selected_buses=None):
         text="label",
         title="Gantt Chart – Bus Planning",
         color_discrete_map={
-            "service trip": "#C3B1E1",  
-            "material trip": "#00BFC4", 
-            "idle": "#E67E22", 
-            "charging": "#F0E442"           
+            "service trip": "#F7ADEB",
+            "material trip": "#D904B2",
+            "idle": "#7F0C6E",
+            "charging": "#D745F1"       
         }
     )
     min_duration = pd.Timedelta(minutes=5)
@@ -124,9 +124,21 @@ def plot_gantt_interactive(df, selected_buses=None):
     base_date = df_plot['start time'].min().date()
     start_range = pd.Timestamp(f"{base_date} 05:00:00")
     end_range = pd.Timestamp(f"{base_date} 01:00:00") + pd.Timedelta(days=1)
-    fig.update_xaxes(range=[start_range, end_range])
+    fig.update_xaxes(
+        range=[start_range, end_range],
+        title_text="Time",
+        showgrid=True,
+        gridcolor="LightGray",
+        tickformat="%H:%M"
+        #tick0=start_range,
+        #dtick=60*60*1000  # elke uur
+    )
 
-    fig.update_yaxes(title="Bus", autorange="reversed")
+    fig.update_yaxes(
+        title="Bus",
+        autorange="reversed",
+        showgrid=True,
+        gridcolor="LightGray")
 
     # Layout dynamisch op basis van aantal bussen
     fig.update_layout(
@@ -518,6 +530,8 @@ with tab_errors:
 
         # collect diagnostics per bus
         diagnostics = {}
+        cap_kwh = 300.0
+        start_soc = 100
         for bus, group in busplan.groupby('bus'):
             group = group.sort_values('start time').reset_index(drop=True)
             batt_diag = get_battery_diagnostics(group, cap_kwh, start_soc)
