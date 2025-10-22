@@ -203,9 +203,9 @@ with tab_visuals:
         import plotly.express as px
         fig_soc = px.line(
             soc_df,
-            x=ts, y='State Of Charge %', color=group_by,
+            x=ts, y='soc_%', color=group_by,
             title=f"SoH / SoC verloop per {group_by_display}",
-            labels={'State Of Charge %': 'SOC (%)', ts: 'Tijd'}
+            labels={'soc_%': 'SOC (%)', ts: 'Tijd'}
         )
         # Maak het wat leesbaarder
         fig_soc.update_yaxes(range=[0, 100])
