@@ -200,10 +200,11 @@ with tab_gantt:
             y="row",
             color="activity",
             text="label",
+            title="Gantt Chart – Bus Planning",
             color_discrete_map={
-                "service trip": "#F79AC9",
-                "material trip": "#CBA0E2",
-                "idle": "#FDB79F"
+                "service trip": "#F79AC9",   # pastelroze
+                "material trip": "#CBA0E2",  # lichtlila
+                "idle": "#FDB79F"            # perzik
             }
         )
 
