@@ -116,7 +116,63 @@ with tab_gantt:
 # Tab 2: Visualisaties
 with tab_visuals:
     st.subheader("📈 Visualisaties")
-    st.write("Hier komen extra grafieken, zoals energieverbruik per bus of per lijn.")
+    if uploaded_file:
+        df = load_data(uploaded_file)
+
+        # ===== Controls =====
+        group_by = st.radio("Groepeer op", ["bus", "line"], horizontal=True)
+        cap_kwh = st.number_input("Batterijcapaciteit (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0)
+        start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1)
+
+        # optioneel filteren op specifieke bussen/lijnen
+        opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
+        pick = st.multiselect(f"Selecteer {group_by}(s)", options=opts, default=opts[:min(5, len(opts))])
+        if pick:
+            df = df[df[group_by].astype(str).isin(pick)]
+
+        # ===== SOC curve bouwen =====
+        # tijdstempel voor volgorde (gebruik start time; end time kan over middernacht gaan)
+        ts = 'start time'
+        d = df.copy()
+        d['energy consumption'] = pd.to_numeric(d['energy consumption'], errors='coerce').fillna(0.0)
+
+        def build_soc(g):
+            g = g.sort_values(ts).copy()
+            # baseline punt op t0 met 0 verbruik zodat de lijn bij start_SOC begint
+            if not g.empty:
+                baseline = g.iloc[[0]].copy()
+                baseline['energy consumption'] = 0.0
+                baseline[ts] = g[ts].min()
+                g = pd.concat([baseline, g], ignore_index=True)
+
+            g['net_kwh_cum'] = g['energy consumption'].cumsum()
+            g['soc_%'] = (start_soc - (g['net_kwh_cum'] / cap_kwh) * 100).clip(0, 100)
+            return g[[group_by, ts, 'soc_%']]
+
+        soc_df = (d.groupby(group_by, dropna=False)
+                    .apply(build_soc)
+                    .reset_index(drop=True))
+
+        import plotly.express as px
+        fig_soc = px.line(
+            soc_df,
+            x=ts, y='soc_%', color=group_by,
+            title=f"SoH / SoC verloop per {group_by}",
+            labels={'soc_%': 'SOC (%)', ts: 'Tijd'}
+        )
+        # Maak het wat leesbaarder
+        fig_soc.update_yaxes(range=[0, 100])
+        fig_soc.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
+
+        st.plotly_chart(fig_soc, use_container_width=True)
+
+        # klein tabelletje erbij zodat je kan checken
+        st.write("Voorbeeldpunten (eerste 30):")
+        st.dataframe(soc_df.sort_values([group_by, ts]).head(30), use_container_width=True)
+
+        st.caption("Positieve 'energy consumption' = verbruik (SOC omlaag), negatieve = laden (SOC omhoog).")
+    else:
+        st.info("Upload een Excel-bestand in de sidebar om de SOC-grafiek te zien.")
 
 # Tab 3: Analyse
 with tab_analysis:
