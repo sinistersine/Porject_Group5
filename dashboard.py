@@ -80,7 +80,7 @@ st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
 st.title("🚌 Bus Planning dashboard")
 
 # Sidebar: upload Excel-bestand
-uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"])
+uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
 tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart", "📈 Visualizations", "🔍 Analysis", "🚨 Errors"])
@@ -182,6 +182,87 @@ def check_bus_timetable_feasible(bus_df, timetable_df):
             return False, "The bus won't arrive on time, pick another bus plan"
     return True, "Timing OK"
 
+
+def get_battery_diagnostics(bus_df, cap_kwh, start_soc_percent):
+    """
+    Return detailed battery simulation trace and a summary.
+    Returns dict with keys: ok(bool), message(str), trace(pd.DataFrame)
+    Trace columns: start time, end time, activity, energy consumption, batt_before_kwh, batt_after_kwh, note
+    """
+    battery = float(cap_kwh) * (float(start_soc_percent) / 100.0)
+    rows = []
+    g = bus_df.sort_values('start time').reset_index(drop=True).copy()
+    for idx, r in g.iterrows():
+        try:
+            cons = float(r.get('energy consumption', 0) or 0)
+        except Exception:
+            cons = 0.0
+        act = str(r.get('activity', '')).lower()
+        is_charging = ('charge' in act) or ('charging' in act) or (cons < 0)
+        before = battery
+        note = ''
+        if is_charging:
+            battery = min(cap_kwh, battery + abs(cons))
+            note = 'charging'
+        else:
+            battery = battery - cons
+            if battery < 0:
+                note = 'below_zero'
+        after = battery
+        rows.append({
+            'start time': r.get('start time'),
+            'end time': r.get('end time'),
+            'activity': r.get('activity'),
+            'energy consumption': cons,
+            'batt_before_kwh': round(before, 3),
+            'batt_after_kwh': round(after, 3),
+            'note': note
+        })
+
+    trace = pd.DataFrame(rows)
+    # find first violation
+    viol = trace[trace['note'] == 'below_zero']
+    if not viol.empty:
+        first = viol.iloc[0]
+        msg = f"Battery dies during activity at {first['start time']} (bus runs out of kWh)."
+        return {'ok': False, 'message': msg, 'trace': trace}
+    return {'ok': True, 'message': 'Battery OK', 'trace': trace}
+
+
+def get_timetable_diagnostics(bus_df, timetable_df):
+    """
+    Return detailed timetable check diagnostics.
+    Returns dict with keys: ok(bool), message(str), violations(list of dict)
+    Each violation dict contains: idx, prev_end, curr_start, prev_end_loc, curr_start_loc, required_min, expected_min, reason
+    """
+    g = bus_df.sort_values('start time').reset_index(drop=True).copy()
+    violations = []
+    def lookup(a, b):
+        try:
+            return float(timetable_df.loc[a, b])
+        except Exception:
+            return None
+
+    for i in range(1, len(g)):
+        prev = g.iloc[i - 1]
+        curr = g.iloc[i]
+        prev_end = prev.get('end time')
+        curr_start = curr.get('start time')
+        if pd.isna(prev_end) or pd.isna(curr_start):
+            violations.append({'idx': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
+            continue
+        required = (curr_start - prev_end).total_seconds() / 60.0
+        expected = lookup(prev.get('end location'), curr.get('start location'))
+        if expected is None:
+            violations.append({'idx': i, 'reason': 'missing_timetable', 'prev_end_loc': prev.get('end location'), 'curr_start_loc': curr.get('start location')})
+            continue
+        if required < expected - 1e-6:
+            violations.append({'idx': i, 'reason': 'insufficient_travel_time', 'prev_end': prev_end, 'curr_start': curr_start, 'required_min': required, 'expected_min': expected, 'prev_line': prev.get('activity'), 'curr_line': curr.get('activity')})
+
+    if violations:
+        return {'ok': False, 'message': f"{len(violations)} timetable violation(s)", 'violations': violations}
+    return {'ok': True, 'message': 'Timing OK', 'violations': []}
+
 with tab_gantt:
     st.subheader("📊 Gantt Chart")
     if uploaded_file:
@@ -193,7 +274,8 @@ with tab_gantt:
             "Selecteer één of meerdere bussen (of 'Alle bussen')",
             options=[0] + bus_options,
             default=[0],
-            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen"
+            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen",
+            key="selected_buses"
         )
 
         fig = plot_gantt_interactive(df, selected_buses)
@@ -251,14 +333,14 @@ with tab_visuals:
 
         # ===== Controls =====
         group_options = {"Bus": "bus", "Line": "line"}
-        group_by_display = st.radio("Group by ", list(group_options.keys()), horizontal=True)
+        group_by_display = st.radio("Group by ", list(group_options.keys()), horizontal=True, key="group_by_radio")
         group_by = group_options[group_by_display]
-        cap_kwh = st.number_input("Battery capacity (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0)
-        start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1)
+        cap_kwh = st.number_input("Battery capacity (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0, key="cap_kwh_visual")
+        start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1, key="start_soc_visual")
 
         # optioneel filteren op specifieke bussen/lijnen
         opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
-        pick = st.multiselect(f"Select {group_by_display}(es)", options=opts, default=opts[:min(5, len(opts))])
+        pick = st.multiselect(f"Select {group_by_display}(es)", options=opts, default=opts[:min(5, len(opts))], key="pick_groups")
         if pick:
             df = df[df[group_by].astype(str).isin(pick)]
 
@@ -393,153 +475,84 @@ with tab_analysis:
 # en als er iets niet klopt, dat dat hier getoond wordt
 with tab_errors:
     st.subheader("🚨 Errors")
-    
+
     uploaded_dist = st.file_uploader("Upload Distance Matrix Excel", type=["xlsx"], key="dist")
     uploaded_tt = st.file_uploader("Upload Timetable Excel", type=["xlsx"], key="tt")
 
     st.write("Here is a list of errors detected in the planning (feasibility checks).")
-    
-    def check_bus_battery_survival(bus_df, cap_kwh, start_soc_percent):
-        """
-        Simulate battery for one bus. Returns (ok:bool, msg:str).
-        - bus_df: rows for that bus sorted by 'start time'
-        - cap_kwh: battery capacity in kWh (float)
-        - start_soc_percent: starting SOC in percent (0-100)
-        """
-        # initialize battery in kWh
-        battery = cap_kwh * (start_soc_percent / 100.0)
-    
-        # ensure ordering
-        bus_df = bus_df.sort_values("start time").reset_index(drop=True)
-    
-        for _, row in bus_df.iterrows():
-            # safe read of consumption (kWh), treat missing as 0
-            try:
-                cons = float(row.get("energy consumption", 0) or 0)
-            except Exception:
-                cons = 0.0
-    
-            act = str(row.get("activity", "")).lower()
-    
-            # interpret charging: either activity contains 'charge'/'charging' or consumption is negative
-            is_charging = ("charge" in act) or ("charging" in act) or (cons < 0)
-    
-            if is_charging:
-                # if the file stores charging as negative consumption, use abs(cons),
-                # otherwise you may have to derive amount based on duration. We use abs(cons).
-                charge_kwh = abs(cons)
-                battery = min(cap_kwh, battery + charge_kwh)
-            else:
-                # consumption reduces battery
-                battery -= cons
-    
-            # check fail
-            if battery < 0:
-                return False, "The bus won't make it with the battery and charging moments, pick another busplan."
-    
-        # survived
-        return True, "Battery OK"
-    
-    
-    def check_bus_timetable_feasible(bus_df, timetable_df):
-        """
-        Check consecutive trips against timetable travel times.
-        - timetable_df: DataFrame where timetable_df.loc[origin, destination] gives expected minutes
-        Returns (ok:bool, msg:str).
-        """
-        bus_df = bus_df.sort_values("start time").reset_index(drop=True)
-    
-        def lookup_travel_minutes(a, b):
-            try:
-                val = timetable_df.loc[a, b]
-                return float(val)
-            except Exception:
-                return None
-    
-        for i in range(1, len(bus_df)):
-            prev = bus_df.iloc[i - 1]
-            curr = bus_df.iloc[i]
-    
-            # both times must be timestamps
-            prev_end = prev.get("end time")
-            curr_start = curr.get("start time")
-            if pd.isna(prev_end) or pd.isna(curr_start):
-                # missing times -> treat as not feasible or skip based on your policy
-                return False, "The bus won't arrive on time, pick another bus plan"
-    
-            required_minutes = (curr_start - prev_end).total_seconds() / 60.0
-    
-            expected = lookup_travel_minutes(prev.get("end location"), curr.get("start location"))
-            if expected is None:
-                # no travel time info -> treat as violation or flag as missing data
-                return False, "The bus won't arrive on time, pick another bus plan"
-    
-            # If required_minutes < expected then bus plan doesn't allow needed travel time
-            if required_minutes < expected - 1e-6:  # small tolerance
-                return False, "The bus won't arrive on time, pick another bus plan"
-    
-        return True, "Timing OK"   
 
-        # ---- Load bus plan and timetable, then run per-bus checks ----
-        # prefer uploaded busplan (same uploader as elsewhere) or default filename
-        try:
-            if 'uploaded_file' in globals() and globals().get('uploaded_file') is not None:
-                busplan = pd.read_excel(globals().get('uploaded_file'))
-            elif os.path.exists('Bus Planning.xlsx'):
-                busplan = pd.read_excel('Bus Planning.xlsx')
-            else:
-                busplan = None
-        except Exception as e:
-            st.error(f"Could not load bus plan: {e}")
-            busplan = None
+        # Option: only show buses selected in the Gantt
+    only_selected = st.checkbox("Toon alleen bussen geselecteerd in Gantt", value=False, key="errors_only_selected")
 
-        # load timetable
-        try:
-            if uploaded_tt is not None:
-                timetable = pd.read_excel(uploaded_tt, index_col=0)
-            elif os.path.exists('Timetable.xlsx'):
-                timetable = pd.read_excel('Timetable.xlsx', index_col=0)
-            else:
-                timetable = None
-        except Exception as e:
-            st.error(f"Could not load timetable: {e}")
-            timetable = None
-
-        if busplan is None:
-            st.info("No bus plan loaded. Upload the bus plan in the sidebar or place 'Bus Planning.xlsx' in the app folder.")
+    # ---- Load bus plan and timetable, then run per-bus checks ----
+    try:
+        if uploaded_file is not None:
+            busplan = load_data(uploaded_file)
+        elif os.path.exists('Bus Planning.xlsx'):
+            busplan = load_data('Bus Planning.xlsx')
         else:
-            # ensure time columns parsed
-            for col in ['start time', 'end time']:
-                if col in busplan.columns:
-                    busplan[col] = pd.to_datetime(busplan[col], errors='coerce')
+            busplan = None
+    except Exception as e:
+        st.error(f"Could not load bus plan: {e}")
+        busplan = None
 
-            # read optional battery controls from globals
-            g = globals()
-            cap = g.get('cap_kwh', 300.0)
-            soc0 = g.get('start_soc', 100)
+    # load timetable (if provided)
+    try:
+        if uploaded_tt is not None:
+            timetable = pd.read_excel(uploaded_tt, index_col=0)
+        elif os.path.exists('Timetable.xlsx'):
+            timetable = pd.read_excel('Timetable.xlsx', index_col=0)
+        else:
+            timetable = None
+    except Exception as e:
+        st.error(f"Could not load timetable: {e}")
+        timetable = None
 
-            # iterate buses and collect messages
-            bus_msgs = []
-            for bus, group in busplan.groupby('bus'):
-                group = group.sort_values('start time').reset_index(drop=True)
-                # battery check
-                ok_b, msg_b = check_bus_battery_survival(group, cap, soc0)
-                if not ok_b:
-                    bus_msgs.append((bus, msg_b))
-                    continue
-                # timetable check (if timetable present)
-                if timetable is not None:
-                    ok_t, msg_t = check_bus_timetable_feasible(group, timetable)
-                    if not ok_t:
-                        bus_msgs.append((bus, msg_t))
-                        continue
-                # OK
-                bus_msgs.append((bus, 'OK'))
+    if busplan is None:
+        st.info("No bus plan loaded. Upload the bus plan in the sidebar or place 'Bus Planning.xlsx' in the app folder.")
+    else:
+        # ensure time columns parsed (load_data already handles this)
+        for col in ['start time', 'end time']:
+            if col in busplan.columns:
+                busplan[col] = pd.to_datetime(busplan[col], errors='coerce')
 
-            # display concise per-bus messages
-            st.write("### Feasibility summary per bus")
-            for bus, message in sorted(bus_msgs, key=lambda x: (str(x[0]))):
-                if message == 'OK':
-                    st.write(f"Bus {bus}: ✅ OK")
-                else:
-                    st.write(f"Bus {bus}: ❌ {message}")
+        # collect diagnostics per bus
+        diagnostics = {}
+        for bus, group in busplan.groupby('bus'):
+            group = group.sort_values('start time').reset_index(drop=True)
+            batt_diag = get_battery_diagnostics(group, cap_kwh, start_soc)
+            tt_diag = None
+            if timetable is not None:
+                tt_diag = get_timetable_diagnostics(group, timetable)
+            diagnostics[bus] = {'battery': batt_diag, 'timetable': tt_diag, 'group': group}
+
+        # optionally filter by the Gantt selection
+        buses_to_show = sorted(diagnostics.keys())
+        if only_selected:
+            sel = st.session_state.get('selected_buses', None)
+            if sel and 0 not in sel:
+                buses_to_show = [b for b in buses_to_show if b in sel]
+
+        # display per-bus expanders with diagnostics
+        st.write("### Detailed diagnostics per bus")
+        if not buses_to_show:
+            st.info("Geen bussen om te tonen met de huidige filterinstellingen.")
+        for bus in buses_to_show:
+            d = diagnostics[bus]
+            batt = d['battery']
+            tt = d['timetable']
+            with st.expander(f"Bus {bus} — {batt['message'] if batt else 'No battery data'}", expanded=False):
+                st.write("**Battery simulation**")
+                st.write(batt['message'])
+                st.dataframe(batt['trace'].sort_values('start time').reset_index(drop=True), use_container_width=True)
+
+                if tt is not None:
+                    st.write("---")
+                    st.write("**Timetable checks**")
+                    st.write(tt['message'])
+                    if tt['violations']:
+                        # show violations as a small dataframe
+                        vt = pd.DataFrame(tt['violations'])
+                        st.dataframe(vt, use_container_width=True)
+                    else:
+                        st.write("No timetable violations detected.")
