@@ -10,6 +10,22 @@ import numpy as np
 BASE_MIN, BASE_KWH = 20, 10.32   # 20 min → 10.32 kWh
 TOL = 0.05                       # match-tolerantie
 
+# UI-only mapping for activity labels (safe display names; internals unchanged)
+ACTIVITY_DISPLAY = {
+    'service trip': 'dienstrit',
+    'material trip': 'materiaalrit',
+    'idle': 'stilstand',
+    'charging': 'laden'
+}
+
+# Colors (kept as fallback if used in plot mapping)
+ACTIVITY_COLORS = {
+    'service trip': '#F79AC9',
+    'material trip': '#CBA0E2',
+    'idle': '#FDB79F',
+    'charging': '#FF0000'
+}
+
 @st.cache_data
 def load_data(file):
     df = pd.read_excel(file, sheet_name="Sheet1")
@@ -199,16 +215,16 @@ with tab_gantt:
         # Gantt chart
         fig = px.timeline(
             df_plot,
-            x_start="start tijd",
-            x_end="eind time",
-            y="rij",
-            color="activiteit",
+            x_start="start time",
+            x_end="end time",
+            y="row",
+            color="activity",
             text="label",
             title="Gantt-diagram – Busplanning",
             color_discrete_map={
-                "dienst trip": "#F79AC9",   # pastelroze
-                "materiaal trip": "#CBA0E2",  # lichtlila
-                "inactief": "#FDB79F"            # perzik
+                "service trip": "#F79AC9",   # pastelroze
+                "material trip": "#CBA0E2",  # lichtlila
+                "idle": "#FDB79F"            # perzik
             }
         )
 
