@@ -1,4 +1,4 @@
-# 
+# streamlit run dashboard.py  (dit is wat je in terminal typt om de app te runnen)
 from ftplib import all_errors
 import streamlit as st
 import pandas as pd
@@ -122,11 +122,51 @@ with tab_visuals:
 with tab_analysis:
     st.subheader("🔍 Analyse")
     if uploaded_file:
-        df = load_data(uploaded_file)          # <-- en hier
+        df = load_data(uploaded_file)          
 
         st.write("### Gemiddelde duur per activiteit (in minuten)")
         avg_duration = df.groupby('activity', as_index=False)['duration_minutes'].mean()
         st.dataframe(avg_duration)
+
+        # === NIEUW BLOK: Gemiddelde duur per activiteit per lijn ===
+        df['line_str'] = df['line'].astype(str).str.replace('.0', '', regex=False)
+
+        avg_duration_per_line_activity = (
+            df.groupby(['line_str', 'activity'], dropna=False)['duration_minutes']
+              .mean()
+              .reset_index()
+              .rename(columns={'line_str': 'line'})
+        )
+
+        st.write("### Gemiddelde duur per activiteit **per bus** (in minuten)")
+        avg_duration_per_bus_activity = (
+            df.groupby(['bus', 'activity'], dropna=False)['duration_minutes']
+            .mean()
+            .reset_index()
+            .sort_values(['bus', 'activity'])
+        )
+        
+        st.dataframe(
+            avg_duration_per_bus_activity.pivot(
+                index='bus',
+                columns='activity',
+                values='duration_minutes'
+                ).round(2),
+            use_container_width=True
+        )
+
+        # Alleen material trips per lijn
+        mat = df['activity'].str.lower().eq('material trip')
+        avg_material_per_line = (
+            df.loc[mat]
+              .groupby('line_str', dropna=False)['duration_minutes']
+              .mean()
+              .reset_index()
+              .rename(columns={'line_str': 'line', 'duration_minutes': 'avg_material_duration_min'})
+              .sort_values('line')
+        )
+
+
 
         st.write("### Totale duur per bus (in minuten)")
         total_duration_per_bus = (df.groupby('bus', as_index=False)['duration_minutes']
