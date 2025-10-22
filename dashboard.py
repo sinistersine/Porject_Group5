@@ -302,7 +302,7 @@ with tab_analysis:
         else:
             st.info("Kolom 'energy consumption' (energieverbruik) niet gevonden in het bestand.")
     else:
-        st.info("Upload een Excel-bestand in de sidebar om de analyse te zien.")
+        st.info("Upload an Excel file in the sidebar to see the analysis.")
 
 # Tab 4: Fouten
 # hier kunnen we alle constraints in zetten waar alle data aan moet voldoen
