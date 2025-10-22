@@ -104,57 +104,124 @@ def plot_gantt_chart(df):
     return fig
 
 # Tab 1: Gantt Chart
-def plot_gantt_per_bus(df):
-    figs = []
-    for bus_id in sorted(df['bus'].dropna().unique()):
-        df_bus = df[df['bus'] == bus_id].copy()
-        
+
+# Functie om Gantt Chart met meerdere bussen in 1 figuur te maken
+def plot_gantt_all_buses(df):
+    df_plot = df.copy()
+
+    # Label voor service trips
+    df_plot['label'] = df_plot.apply(
+        lambda row: str(int(row['line'])) if row['activity'] == 'service trip' and pd.notna(row['line']) else '',
+        axis=1
+    )
+
+    # Y-as = bus ID
+    df_plot['row'] = df_plot['bus'].apply(lambda x: f"Bus {int(x)}" if pd.notna(x) else "Onbekend")
+
+    # Gantt Chart
+   # Functie om Gantt Chart met meerdere bussen te maken (interactief)
+def plot_gantt_interactive(df):
+    df_plot = df.copy()
+
+    # Label voor service trips
+    df_plot['label'] = df_plot.apply(
+        lambda row: str(int(row['line'])) if row['activity'] == 'service trip' and pd.notna(row['line']) else '',
+        axis=1
+    )
+
+    # Y-as = bus ID
+    df_plot['row'] = df_plot['bus'].apply(lambda x: f"Bus {int(x)}" if pd.notna(x) else "Onbekend")
+
+    # Gantt Chart
+    fig = px.timeline(
+        df_plot,
+        x_start="start time",
+        x_end="end time",
+        y="row",
+        color="activity",
+        text="label",
+        title="Gantt Chart – Alle bussen",
+        color_discrete_map={
+            "service trip": "#F79AC9",   # pastelroze
+            "material trip": "#CBA0E2",  # lichtlila
+            "idle": "#FDB79F"            # perzik
+        }
+    )
+
+    # X-as van 05:00 tot 01:00
+    base_date = df_plot['start time'].min().date()
+    start_range = pd.Timestamp(f"{base_date} 05:00:00")
+    end_range = pd.Timestamp(f"{base_date} 01:00:00") + pd.Timedelta(days=1)
+    fig.update_xaxes(range=[start_range, end_range])
+    fig.update_yaxes(title="Bus", autorange="reversed")
+    
+    # Layout dynamisch op basis van aantal bussen
+    fig.update_layout(
+        height=400 + 30*len(df_plot['bus'].unique()),
+        margin=dict(l=20, r=20, t=40, b=20),
+        dragmode='zoom',  # activeer klik & sleep zoom
+    )
+
+    fig.update_traces(marker=dict(line=dict(color='black', width=1)))
+
+    return fig
+
+with tab_gantt:
+    st.subheader("📊 Gantt Chart – Selecteer bus om uit te zoomen/zoomen")
+    if uploaded_file:
+        df = load_data(uploaded_file)
+
+        # Maak lijst van unieke bussen voor selectie
+        bus_options = sorted(df['bus'].dropna().unique())
+        selected_bus = st.selectbox(
+            "Klik op een bus om die uit te vergroten (of 'Alle bussen')",
+            options=[0] + bus_options,
+            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen"
+        )
+
+        # Filter data op de geselecteerde bus
+        if selected_bus != 0:
+            df_plot = df[df['bus'] == selected_bus].copy()
+        else:
+            df_plot = df.copy()
+
         # Label voor service trips
-        df_bus['label'] = df_bus.apply(
+        df_plot['label'] = df_plot.apply(
             lambda row: str(int(row['line'])) if row['activity'] == 'service trip' and pd.notna(row['line']) else '',
             axis=1
         )
-        df_bus['row'] = f"Bus {bus_id}"
+        df_plot['row'] = df_plot['bus'].apply(lambda x: f"Bus {int(x)}" if pd.notna(x) else "Onbekend")
 
-        # Gantt Chart
+        # Gantt chart
         fig = px.timeline(
-            df_bus,
+            df_plot,
             x_start="start time",
             x_end="end time",
             y="row",
             color="activity",
             text="label",
-            title=f"Gantt Chart – Bus {bus_id}",
             color_discrete_map={
-                "service trip": "#F79AC9",   # pastelroze
-                "material trip": "#CBA0E2",  # lichtlila
-                "idle": "#FDB79F"            # perzik
+                "service trip": "#F79AC9",
+                "material trip": "#CBA0E2",
+                "idle": "#FDB79F"
             }
         )
 
-        # X-as van 05:00 tot 01:00
-        # We nemen de datum van de eerste starttijd als basis
-        base_date = df_bus['start time'].min().date()
+        # Layout
+        base_date = df_plot['start time'].min().date()
         start_range = pd.Timestamp(f"{base_date} 05:00:00")
-        # Als eindtijd na middernacht valt, voeg 1 dag toe
         end_range = pd.Timestamp(f"{base_date} 01:00:00") + pd.Timedelta(days=1)
-        
         fig.update_xaxes(range=[start_range, end_range])
-        fig.update_yaxes(showticklabels=True)
-        fig.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=20))
-        figs.append(fig)
-    return figs
+        fig.update_yaxes(title="Bus", autorange="reversed")
+        fig.update_layout(
+            height=400 + 30*len(df_plot['bus'].unique()),
+            margin=dict(l=20, r=20, t=40, b=20),
+            dragmode='zoom'
+        )
+        fig.update_traces(marker=dict(line=dict(color='black', width=1)))
 
+        st.plotly_chart(fig, use_container_width=True)
 
-with tab_gantt:
-    st.subheader("📊 Gantt Chart per bus")
-    if uploaded_file:
-        df = load_data(uploaded_file)
-        figs = plot_gantt_per_bus(df)
-        for fig in figs:
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Upload een Excel-bestand in de sidebar om de Gantt Charts te zien.")
 
 
 # Tab 2: Visualisaties
