@@ -60,14 +60,14 @@ def load_data(file):
 # command to see website: streamlit run dashboard.py
 
 # Pagina-instellingen
-st.set_page_config(page_title="Bus Scheduling Dashboard", layout="wide")
-st.title("🚌 Bus plan analysis")
+st.set_page_config(page_title="Busplanningsdashboard", layout="wide")
+st.title("🚌 Busplanningsanalyse")
 
 # Sidebar: upload Excel-bestand
 uploaded_file = st.sidebar.file_uploader("1) Upload het busplan (Excel)", type=["xlsx"])
 
 # Tabs bovenaan
-tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt Chart", "📈 Visualisaties", "🔍 Analyse", "🚨 Fouten"])
+tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-diagram", "📈 Visualisaties", "🔍 Analyse", "🚨 Fouten"])
 
 # Functie om Gantt Chart te maken
 def plot_gantt_chart(df):
@@ -87,7 +87,7 @@ def plot_gantt_chart(df):
         y="row",
         color="activity",
         text="label",
-        title="Gantt Chart – Bus Planning",
+        title="Gantt-diagram – Busplanning",
         color_discrete_map={
             "service trip": "#E75480",   # roze
             "material trip": "#EC7699", # lichtroze
@@ -167,7 +167,7 @@ def plot_gantt_interactive(df):
     return fig
 
 with tab_gantt:
-    st.subheader("📊 Gantt Chart – Selecteer bus om uit te zoomen/zoomen")
+    st.subheader("📊 Gantt-diagram – Selecteer bus om in of uit te zoomen")
     if uploaded_file:
         df = load_data(uploaded_file)
 
@@ -176,7 +176,7 @@ with tab_gantt:
 
         # Multi-select met 'Alle bussen' optie
         selected_buses = st.multiselect(
-            "Selecteer één of meerdere bussen (of 'Alle bussen')",
+            "Selecteer één of meerdere bussen (of Alle bussen)",
             options=[0] + bus_options,
             default=[0],  # standaard 'Alle bussen'
             format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen"
@@ -199,16 +199,16 @@ with tab_gantt:
         # Gantt chart
         fig = px.timeline(
             df_plot,
-            x_start="start time",
-            x_end="end time",
-            y="row",
-            color="activity",
+            x_start="start tijd",
+            x_end="eind time",
+            y="rij",
+            color="activiteit",
             text="label",
-            title="Gantt Chart – Bus Planning",
+            title="Gantt-diagram – Busplanning",
             color_discrete_map={
-                "service trip": "#F79AC9",   # pastelroze
-                "material trip": "#CBA0E2",  # lichtlila
-                "idle": "#FDB79F"            # perzik
+                "dienst trip": "#F79AC9",   # pastelroze
+                "materiaal trip": "#CBA0E2",  # lichtlila
+                "inactief": "#FDB79F"            # perzik
             }
         )
 
@@ -234,13 +234,16 @@ with tab_visuals:
         df = load_data(uploaded_file)
 
         # ===== Controls =====
-        group_by = st.radio("Groepeer op", ["bus", "line"], horizontal=True)
+        # toon Nederlandse labels, map naar interne kolomnamen
+        group_options = {"Bus": "bus", "Lijn": "line"}
+        group_by_display = st.radio("Groepeer op", list(group_options.keys()), horizontal=True)
+        group_by = group_options[group_by_display]
         cap_kwh = st.number_input("Batterijcapaciteit (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0)
         start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1)
 
         # optioneel filteren op specifieke bussen/lijnen
         opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
-        pick = st.multiselect(f"Selecteer {group_by}(s)", options=opts, default=opts[:min(5, len(opts))])
+        pick = st.multiselect(f"Selecteer {group_by_display}(s)", options=opts, default=opts[:min(5, len(opts))])
         if pick:
             df = df[df[group_by].astype(str).isin(pick)]
 
@@ -270,9 +273,9 @@ with tab_visuals:
         import plotly.express as px
         fig_soc = px.line(
             soc_df,
-            x=ts, y='soc_%', color=group_by,
-            title=f"SoH / SoC verloop per {group_by}",
-            labels={'soc_%': 'SOC (%)', ts: 'Tijd'}
+            x=ts, y='State Of Charge %', color=group_by,
+            title=f"SoH / SoC verloop per {group_by_display}",
+            labels={'State Of Charge %': 'SOC (%)', ts: 'Tijd'}
         )
         # Maak het wat leesbaarder
         fig_soc.update_yaxes(range=[0, 100])
@@ -284,7 +287,7 @@ with tab_visuals:
         st.write("Voorbeeldpunten (eerste 30):")
         st.dataframe(soc_df.sort_values([group_by, ts]).head(30), use_container_width=True)
 
-        st.caption("Positieve 'energy consumption' = verbruik (SOC omlaag), negatieve = laden (SOC omhoog).")
+        st.caption("Positieve 'energy consumption' (energieverbruik) = verbruik (SOC omlaag), negatieve = laden (SOC omhoog).")
     else:
         st.info("Upload een Excel-bestand in de sidebar om de SOC-grafiek te zien.")
 
@@ -321,7 +324,8 @@ with tab_analysis:
                 index='bus',
                 columns='activity',
                 values='duration_minutes'
-                ).round(2),
+                ).round(2)
+             .rename(columns=lambda c: ACTIVITY_DISPLAY.get(str(c).lower(), c)),
             use_container_width=True
         )
 
@@ -357,15 +361,15 @@ with tab_analysis:
             st.write("### Energie per bus (kWh) + eind-SOC schatting")
             st.dataframe(per_bus.sort_values('netto_kWh', ascending=False), use_container_width=True)
 
-            st.write("### Audit: material trips check")
-            st.dataframe(
-                df.loc[df['energy_expected_material'].notna(),
-                       ['activity','start time','end time','duration_minutes',
-                        'energy_expected_material','energy consumption',
-                        'energy_diff','energy_match']]
-            )
+            st.write("### Audit: controle materiaalritten")
+            audit_display = df.loc[df['energy_expected_material'].notna(),
+                                   ['activity','start time','end time','duration_minutes',
+                                    'energy_expected_material','energy consumption',
+                                    'energy_diff','energy_match']].copy()
+            audit_display['activity'] = audit_display['activity'].astype(str).str.lower().map(ACTIVITY_DISPLAY).fillna(audit_display['activity'])
+            st.dataframe(audit_display)
         else:
-            st.info("Kolom 'energy consumption' niet gevonden in het bestand.")
+            st.info("Kolom 'energy consumption' (energieverbruik) niet gevonden in het bestand.")
     else:
         st.info("Upload een Excel-bestand in de sidebar om de analyse te zien.")
 
