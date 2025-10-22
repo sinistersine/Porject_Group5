@@ -173,18 +173,22 @@ with tab_gantt:
 
         # Maak lijst van unieke bussen voor selectie
         bus_options = sorted(df['bus'].dropna().unique())
-        selected_bus = st.selectbox(
-            "Klik op een bus om die uit te vergroten (of 'Alle bussen')",
+
+        # Multi-select met 'Alle bussen' optie
+        selected_buses = st.multiselect(
+            "Selecteer één of meerdere bussen (of 'Alle bussen')",
             options=[0] + bus_options,
+            default=[0],  # standaard 'Alle bussen'
             format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen"
-        )
+)
 
-        # Filter data op de geselecteerde bus
-        if selected_bus != 0:
-            df_plot = df[df['bus'] == selected_bus].copy()
-        else:
+
+        # Filter data op geselecteerde bus(s)
+        if 0 in selected_buses or not selected_buses:  # 0 = Alle bussen
             df_plot = df.copy()
-
+        else:
+            df_plot = df[df['bus'].isin(selected_buses)].copy()
+            
         # Label voor service trips
         df_plot['label'] = df_plot.apply(
             lambda row: str(int(row['line'])) if row['activity'] == 'service trip' and pd.notna(row['line']) else '',
@@ -193,20 +197,41 @@ with tab_gantt:
         df_plot['row'] = df_plot['bus'].apply(lambda x: f"Bus {int(x)}" if pd.notna(x) else "Onbekend")
 
         # Gantt chart
-        fig = px.timeline(
-            df_plot,
-            x_start="start time",
-            x_end="end time",
-            y="row",
-            color="activity",
-            text="label",
-            title="Gantt Chart – Bus Planning",
-            color_discrete_map={
-                "service trip": "#F79AC9",   # pastelroze
-                "material trip": "#CBA0E2",  # lichtlila
-                "idle": "#FDB79F"            # perzik
-            }
-        )
+        import plotly.express as px
+
+# Stel df_plot is je dataframe met start, end, bus en label
+fig = px.timeline(
+    df_plot,
+    x_start="start time",
+    x_end="end time",
+    y="row",
+    color="activity",
+    text=None,  # we gebruiken geen standaard text
+    color_discrete_map={
+        "service trip": "#F79AC9",
+        "material trip": "#CBA0E2",
+        "idle": "#FDB79F"
+    }
+)
+
+# Voeg verticaal georiënteerde annotations toe voor labels
+for i, row in df_plot.iterrows():
+    fig.add_annotation(
+        x=row['start time'],           # begin van de balk
+        y=row['row'],                  # bus-rij
+        text=str(int(row['line'])),    # bv. 400 of 401
+        showarrow=False,
+        xanchor='left',                # linkerkant van de balk
+        yanchor='bottom',
+        textangle=-90,                 # verticaal
+        font=dict(size=10, color='black')
+    )
+
+# Layout tweaks
+fig.update_yaxes(title="Bus", autorange="reversed")
+fig.update_layout(height=400 + 30*len(df_plot['bus'].unique()))
+fig.update_traces(marker=dict(line=dict(color='black', width=1)))
+
 
         # Layout
         base_date = df_plot['start time'].min().date()
