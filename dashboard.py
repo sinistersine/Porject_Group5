@@ -12,18 +12,18 @@ TOL = 0.05                       # match-tolerantie
 
 # UI-only mapping for activity labels (safe display names; internals unchanged)
 ACTIVITY_DISPLAY = {
-    'service trip': 'dienstrit',
-    'material trip': 'materiaalrit',
-    'idle': 'stilstand',
-    'charging': 'laden'
+    'service trip': 'service trip',
+    'material trip': 'material trip',
+    'idle': 'idle time',
+    'charging': 'charging time'
 }
 
 # Colors (kept as fallback if used in plot mapping)
 ACTIVITY_COLORS = {
     'service trip': '#F79AC9',
     'material trip': '#CBA0E2',
-    'idle': '#FDB79F',
-    'charging': '#FF0000'
+    'idle': '#F39C12',
+    'charging': '#A0E7E5'
 }
 
 @st.cache_data
@@ -112,9 +112,10 @@ def plot_gantt_interactive(df, selected_buses=None):
         text="label",
         title="Gantt Chart – Bus Planning",
         color_discrete_map={
-            "service trip": "#F79AC9",   # pastelroze
-            "material trip": "#CBA0E2",  # lichtlila
-            "idle": "#FDB79F"            # perzik
+            "service trip": "#C3B1E1",  
+            "material trip": "#00BFC4", 
+            "idle": "#E67E22", 
+            "charging": "#F0E442"           
         }
     )
     min_duration = pd.Timedelta(minutes=5)
@@ -159,21 +160,21 @@ with tab_gantt:
 
 # Tab 2: Visualisaties
 with tab_visuals:
-    st.subheader("📈 Visualisaties")
+    st.subheader("📈 Visualisation")
     if uploaded_file:
         df = load_data(uploaded_file)
 
         # ===== Controls =====
         # toon Nederlandse labels, map naar interne kolomnamen
-        group_options = {"Bus": "bus", "Lijn": "line"}
-        group_by_display = st.radio("Groepeer op", list(group_options.keys()), horizontal=True)
+        group_options = {"Bus": "bus", "Line": "line"}
+        group_by_display = st.radio("Group by ", list(group_options.keys()), horizontal=True)
         group_by = group_options[group_by_display]
-        cap_kwh = st.number_input("Batterijcapaciteit (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0)
+        cap_kwh = st.number_input("Battery capacity (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0)
         start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1)
 
         # optioneel filteren op specifieke bussen/lijnen
         opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
-        pick = st.multiselect(f"Selecteer {group_by_display}(s)", options=opts, default=opts[:min(5, len(opts))])
+        pick = st.multiselect(f"Select {group_by_display}(es)", options=opts, default=opts[:min(5, len(opts))])
         if pick:
             df = df[df[group_by].astype(str).isin(pick)]
 
@@ -204,8 +205,8 @@ with tab_visuals:
         fig_soc = px.line(
             soc_df,
             x=ts, y='soc_%', color=group_by,
-            title=f"SoH / SoC verloop per {group_by_display}",
-            labels={'soc_%': 'SOC (%)', ts: 'Tijd'}
+            title=f"SoH / SoC progression per {group_by_display}",
+            labels={'soc_%': 'SOC (%)', ts: 'Time'}
         )
         # Maak het wat leesbaarder
         fig_soc.update_yaxes(range=[0, 100])
@@ -214,20 +215,20 @@ with tab_visuals:
         st.plotly_chart(fig_soc, use_container_width=True)
 
         # klein tabelletje erbij zodat je kan checken
-        st.write("Voorbeeldpunten (eerste 30):")
+        st.write("Example points (first 30):")
         st.dataframe(soc_df.sort_values([group_by, ts]).head(30), use_container_width=True)
 
-        st.caption("Positieve 'energy consumption' (energieverbruik) = verbruik (SOC omlaag), negatieve = laden (SOC omhoog).")
+        st.caption("Positive 'energy consumption' = consumption (SOC decreases), negative = charging (SOC increases).")
     else:
-        st.info("Upload een Excel-bestand in de sidebar om de SOC-grafiek te zien.")
+        st.info("Upload an Excel file in the sidebar to see the SOC graph.")
 
-# Tab 3: Analyse
+# Tab 3: Analysis
 with tab_analysis:
-    st.subheader("🔍 Analyse")
+    st.subheader("🔍 Analysis")
     if uploaded_file:
         df = load_data(uploaded_file)          
 
-        st.write("### Gemiddelde duur per activiteit (in minuten)")
+        st.write("### Average duration per activity (in minutes)")
         avg_duration = df.groupby('activity', as_index=False)['duration_minutes'].mean()
         st.dataframe(avg_duration)
 
@@ -241,7 +242,7 @@ with tab_analysis:
               .rename(columns={'line_str': 'line'})
         )
 
-        st.write("### Gemiddelde duur per activiteit **per bus** (in minuten)")
+        st.write("### Average duration per activity **per bus** (in minutes)")
         avg_duration_per_bus_activity = (
             df.groupby(['bus', 'activity'], dropna=False)['duration_minutes']
             .mean()
@@ -281,17 +282,17 @@ with tab_analysis:
         # Energie-analyse (nu al gefixt voor material trips)
         if 'energy consumption' in df.columns:
             per_bus = df.groupby('bus', as_index=False).agg(
-                verbruik_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
-                geladen_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
+                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
+                charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
                 netto_kWh   =('energy consumption', 'sum'),
             )
             BATTERY_KWH = 300.0
-            per_bus['eind_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
+            per_bus['end_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
 
-            st.write("### Energie per bus (kWh) + eind-SOC schatting")
+            st.write("### Energy per bus (kWh) + end-SOC estimate")
             st.dataframe(per_bus.sort_values('netto_kWh', ascending=False), use_container_width=True)
 
-            st.write("### Audit: controle materiaalritten")
+            st.write("### Audit: inspection of material trips")
             audit_display = df.loc[df['energy_expected_material'].notna(),
                                    ['activity','start time','end time','duration_minutes',
                                     'energy_expected_material','energy consumption',
@@ -307,5 +308,5 @@ with tab_analysis:
 # hier kunnen we alle constraints in zetten waar alle data aan moet voldoen
 # en als er iets niet klopt, dat dat hier getoond wordt
 with tab_errors:
-    st.subheader("🚨 Fouten")
-    st.write("Hier kun je een lijst tonen van alle fouten die zijn opgetreden tijdens de planning.")
+    st.subheader("🚨 Errors")
+    st.write("Here you can display a list of all errors that occurred during the planning.")
