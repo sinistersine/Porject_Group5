@@ -112,10 +112,10 @@ def plot_gantt_interactive(df, selected_buses=None):
         text="label",
         title="Gantt Chart – Bus Planning",
         color_discrete_map={
-            "service trip": "#F7ADEB",
+            "service trip": "#664EDC",
             "material trip": "#D904B2",
-            "idle": "#7F0C6E",
-            "charging": "#D745F1"       
+            "idle": "#FF9B06",
+            "charging": "#0DD11A"       
         }
     )
     min_duration = pd.Timedelta(minutes=5)
@@ -406,9 +406,6 @@ with tab_analysis:
     if uploaded_file:
         df = load_data(uploaded_file)          
 
-        st.write("### Average duration per activity (in minutes)")
-        avg_duration = df.groupby('activity', as_index=False)['duration_minutes'].mean()
-        st.dataframe(avg_duration)
 
         # === NIEUW BLOK: Gemiddelde duur per activiteit per lijn ===
         df['line_str'] = df['line'].astype(str).str.replace('.0', '', regex=False)
