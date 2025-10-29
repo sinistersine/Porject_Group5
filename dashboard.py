@@ -329,19 +329,18 @@ with tab_visuals:
     if uploaded_file:
         df = load_data(uploaded_file)
 
-        # ===== Controls =====
-        group_options = {"Bus": "bus", "Line": "line"}
+        # ===== Keuze: per bus of per lijn =====
+        group_options = {"Bus": "bus"}
         group_by_display = st.radio("Group by ", list(group_options.keys()), horizontal=True, key="group_by_radio")
         group_by = group_options[group_by_display]
         cap_kwh = st.number_input("Battery capacity (kWh)", min_value=50.0, max_value=1000.0, value=300.0, step=10.0, key="cap_kwh_visual")
-        start_soc = st.slider("Start-SOC (%)", min_value=0, max_value=100, value=100, step=1, key="start_soc_visual")
 
         # optioneel filteren op specifieke bussen/lijnen
         opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
         pick = st.multiselect(f"Select {group_by_display}(es)", options=opts, default=opts[:min(5, len(opts))], key="pick_groups")
         if pick:
             df = df[df[group_by].astype(str).isin(pick)]
-
+            
         # ===== SOC curve bouwen =====
         # tijdstempel voor volgorde (gebruik start time; end time kan over middernacht gaan)
         ts = 'start time'
