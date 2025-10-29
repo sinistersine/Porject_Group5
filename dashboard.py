@@ -89,20 +89,19 @@ tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart", 
 def plot_gantt_interactive(df, selected_buses=None):
     df_plot = df.copy()
 
-    # Filter op geselecteerde bussen (0 = alle bussen)
     if selected_buses and 0 not in selected_buses:
         df_plot = df_plot[df_plot['bus'].isin(selected_buses)]
 
-    # Label voor service trips
+    # Label voor service trips → verticale layout via <br>
     df_plot['label'] = df_plot.apply(
-        lambda row: str(int(row['line'])) if row['activity'] == 'service trip' and pd.notna(row['line']) else '',
+        lambda row: '<br>'.join(list(str(int(row['line'])))) 
+                    if (row.get('activity') == 'service trip' and pd.notna(row.get('line'))) 
+                    else '',
         axis=1
     )
 
-    # Y-as = bus ID
     df_plot['row'] = df_plot['bus'].apply(lambda x: f"Bus {int(x)}" if pd.notna(x) else "Onbekend")
 
-    # Gantt Chart
     fig = px.timeline(
         df_plot,
         x_start="start time",
@@ -114,40 +113,26 @@ def plot_gantt_interactive(df, selected_buses=None):
         color_discrete_map={
             "service trip": "#664EDC",
             "material trip": "#D904B2",
-            "idle": "#FF9B06",
+            "idle": "#E7DF12",
             "charging": "#0DD11A"       
         }
     )
-    min_duration = pd.Timedelta(minutes=5)
 
-    # X-as van 05:00 tot 01:00
+    # Zorg dat tekst IN de balk staat en niet wordt afgekapt
+    fig.update_traces(
+        textposition="inside",
+        textfont=dict(size=11),
+        cliponaxis=False,   # helpt voorkomen dat tekst geknipt wordt
+        marker=dict(line=dict(color='black', width=1))
+    )
+
     base_date = df_plot['start time'].min().date()
     start_range = pd.Timestamp(f"{base_date} 05:00:00")
     end_range = pd.Timestamp(f"{base_date} 01:00:00") + pd.Timedelta(days=1)
-    fig.update_xaxes(
-        range=[start_range, end_range],
-        title_text="Time",
-        showgrid=True,
-        gridcolor="LightGray",
-        tickformat="%H:%M"
-        #tick0=start_range,
-        #dtick=60*60*1000  # elke uur
-    )
+    fig.update_xaxes(range=[start_range, end_range], title_text="Time", showgrid=True, gridcolor="LightGray", tickformat="%H:%M")
+    fig.update_yaxes(title="Bus", autorange="reversed", showgrid=True, gridcolor="LightGray")
 
-    fig.update_yaxes(
-        title="Bus",
-        autorange="reversed",
-        showgrid=True,
-        gridcolor="LightGray")
-
-    # Layout dynamisch op basis van aantal bussen
-    fig.update_layout(
-        height=400 + 30*len(df_plot['bus'].unique()),
-        margin=dict(l=20, r=20, t=40, b=20),
-        dragmode='zoom'
-    )
-
-    fig.update_traces(marker=dict(line=dict(color='black', width=1)))
+    fig.update_layout(height=400 + 30*len(df_plot['bus'].unique()), margin=dict(l=20, r=20, t=40, b=20), dragmode='zoom')
 
     return fig
 
@@ -283,15 +268,14 @@ with tab_gantt:
         # Lijst van unieke bussen
         bus_options = sorted(df['bus'].dropna().unique())
         selected_buses = st.multiselect(
-            "Selecteer één of meerdere bussen (of 'Alle bussen')",
+            "Select one or multiple busses (or 'All busses')",
             options=[0] + bus_options,
             default=[0],
-            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "Alle bussen",
+            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses",
             key="selected_buses"
         )
 
-        fig = plot_gantt_interactive(df, selected_buses)
-        st.plotly_chart(fig, use_container_width=True)
+
 
         # ---- Run feasibility checks for displayed buses ----
         # determine bus ids to check
@@ -335,6 +319,8 @@ with tab_gantt:
         if not any_fail:
             st.success("Selected busplan(s) appear feasible.")
 
+    fig = plot_gantt_interactive(df, selected_buses)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # Tab 2: Visualisaties
