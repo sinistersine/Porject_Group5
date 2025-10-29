@@ -323,41 +323,21 @@ with tab_gantt:
     st.plotly_chart(fig, use_container_width=True)
 
 
-# Tab 2: Visualisaties
+# Tab 2: Visualizations
 with tab_visuals:
-    st.subheader("📈 Visualisation")
+    st.subheader("📈 Visualization")
 
     if uploaded_file:
         df = load_data(uploaded_file)
 
-        # ===== Keuze: per bus of per lijn =====
-        group_options = {"Bus": "bus"}
-        group_by_display = st.radio(
-            "Group by ",
-            list(group_options.keys()),
-            horizontal=True,
-            key="group_by_radio"
-        )
-        group_by = group_options[group_by_display]
+        # ===== Fixed setup: group by bus =====
+        group_by_display = "Bus"
+        group_by = "bus"
 
-        cap_kwh = st.number_input(
-            "Battery capacity (kWh)",
-            min_value=50.0,
-            max_value=1000.0,
-            value=300.0,
-            step=10.0,
-            key="cap_kwh_visual"
-        )
-        start_soc = st.slider(
-            "Start-SOC (%)",
-            min_value=0,
-            max_value=100,
-            value=100,
-            step=1,
-            key="start_soc_visual"
-        )
+        cap_kwh = 300
+        start_soc = 100
 
-        # Optioneel filteren op specifieke bussen/lijnen
+        # Optional filter on specific buses
         opts = sorted(df[group_by].dropna().astype(str).unique().tolist())
         pick = st.multiselect(
             f"Select {group_by_display}(es)",
@@ -368,7 +348,7 @@ with tab_visuals:
         if pick:
             df = df[df[group_by].astype(str).isin(pick)]
 
-        # ===== SOC curve bouwen =====
+        # ===== Build SOC curve =====
         ts = "start time"
         d = df.copy()
         d["energy consumption"] = pd.to_numeric(
@@ -377,7 +357,7 @@ with tab_visuals:
 
         def build_soc(g):
             g = g.sort_values(ts).copy()
-            # baseline punt op t0 met 0 verbruik zodat de lijn bij start_SOC begint
+            # Add baseline point so the curve starts at 100%
             if not g.empty:
                 baseline = g.iloc[[0]].copy()
                 baseline["energy consumption"] = 0.0
@@ -396,7 +376,26 @@ with tab_visuals:
             .reset_index(drop=True)
         )
 
+        # ===== Check: battery below 10% =====
+        under10 = soc_df[soc_df["soc_%"] < 10]
+        if not under10.empty:
+            # First time each bus drops below 10%
+            hits = (
+                under10.sort_values(ts)
+                .groupby(group_by, as_index=False)
+                .first()[[group_by, ts, "soc_%"]]
+            )
+            # Display alert
+            st.error(
+                "⚠️ Battery below 10% — these buses are unavailable: "
+                + ", ".join(hits[group_by].astype(str).tolist())
+            )
+            # Show detailed info
+            with st.expander("First moment below 10% per bus"):
+                st.dataframe(hits, use_container_width=True)
+
         import plotly.express as px
+        import plotly.graph_objects as go
 
         fig_soc = px.line(
             soc_df,
@@ -407,28 +406,42 @@ with tab_visuals:
             labels={"soc_%": "SOC (%)", ts: "Time"},
         )
 
-        # Maak het wat leesbaarder
+        # Make it easier to read
         fig_soc.update_yaxes(range=[0, 100])
         fig_soc.update_layout(
             height=350,
             margin=dict(l=20, r=20, t=40, b=20)
         )
 
-        st.plotly_chart(fig_soc, use_container_width=True)
-
-        # Klein tabelletje erbij zodat je kan checken
-        st.write("Example points (first 30):")
-        st.dataframe(
-            soc_df.sort_values([group_by, ts]).head(30),
-            use_container_width=True
+        # Add 10% threshold line
+        fig_soc.add_hline(
+            y=10,
+            line_dash="dot",
+            annotation_text="10% threshold",
+            annotation_position="bottom right"
         )
 
+        # Add red dots for points under 10%
+        if not under10.empty:
+            fig_soc.add_trace(
+                go.Scatter(
+                    x=under10[ts],
+                    y=under10["soc_%"],
+                    mode="markers",
+                    marker=dict(size=8, color="red"),
+                    name="<10% SoC"
+                )
+            )
+
+        st.plotly_chart(fig_soc, use_container_width=True)
+
         st.caption(
-            "Positive 'energy consumption' = consumption (SOC decreases), negative = charging (SOC increases)."
+            "Positive 'energy consumption' = usage (SOC decreases), negative = charging (SOC increases)."
         )
 
     else:
         st.info("Upload an Excel file in the sidebar to see the SOC graph.")
+
 
 # Tab 3: Analysis
 with tab_analysis:
