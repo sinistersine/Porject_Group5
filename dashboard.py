@@ -82,7 +82,7 @@ st.title("🚌 Bus Planning dashboard")
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
-tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart", "📈 Visualizations", "🔍 Analysis", "🚨 Errors"])
+tab_gantt, tab_kpi, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart","👨‍💻KPI comparison","📈 Visualizations", "🔍 Analysis", "🚨 Errors"])
 
 # Functie om Gantt Chart te plotten (één of meerdere bussen)
 def plot_gantt_interactive(df, selected_buses=None):
@@ -259,6 +259,7 @@ def get_timetable_diagnostics(bus_df, timetable_df):
         return {'ok': False, 'message': f"{len(violations)} timetable violation(s)", 'violations': violations}
     return {'ok': True, 'message': 'Timing OK', 'violations': []}
 
+# Tab 1: Gantt Chart
 with tab_gantt:
     st.subheader("📊 Gantt Chart")
 
@@ -322,9 +323,15 @@ with tab_gantt:
     else:
         st.info("Upload een Excel-bestand in de sidebar om de Gantt Chart te zien.")
 
-# Tab 2: Visualisations
+
+# Tab 2: KPI comparison
+with tab_kpi:
+    st.subheader("👨‍💻 KPI Comparison")
+    st.info("KPI comparison functionality is under development.")
+
+# Tab 3: Visualizations
 with tab_visuals:
-    st.subheader("📈 Visualisation")
+    st.subheader("📈 Visualization")
 
     if uploaded_file:
         df = load_data(uploaded_file)
@@ -461,41 +468,39 @@ with tab_analysis:
         # ===== Energie-analyse =====
         if 'energy consumption' in df.columns:
             per_bus = df.groupby('bus', as_index=False).agg(
+<<<<<<< Updated upstream
                 consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum())
+=======
+                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
+                charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
+                netto_kWh   =('energy consumption', 'sum'),
+>>>>>>> Stashed changes
             )
+            BATTERY_KWH = 300.0
+            per_bus['end_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
 
             # ===== Merge total duration + energie =====
             bus_summary = pd.merge(total_duration_per_bus, per_bus, on='bus', how='outer')
 
+<<<<<<< Updated upstream
             st.write("### Total duration + Energy per bus")
+=======
+            st.write("### Bus summary: Total duration + Energy + end-SOC")
+>>>>>>> Stashed changes
             st.dataframe(bus_summary.sort_values('bus'), use_container_width=True)
 
-            # ===== Summary per bus per activity (zonder energy) =====
-            st.write("### Summary per bus per activity")
-            summary = (
-                df.groupby(['bus', 'activity'], dropna=False)
-                .agg(
-                    num_trips=('activity', 'count'),
-                    total_duration=('duration_minutes', 'sum')
-                )
-                .reset_index()
-            )
-
-            # eventueel afronden
-            summary = summary.round({'total_duration': 2})
-
-            # Pivot zodat per bus de activiteiten als kolommen komen
-            pivot_summary = summary.pivot(index='bus', columns='activity', values=['num_trips','total_duration'])
-
-            # Flatten multiindex kolommen voor leesbaarheid
-            pivot_summary.columns = [f"{agg}_{act}" for agg, act in pivot_summary.columns]
-
-            st.dataframe(pivot_summary.sort_values('bus'), use_container_width=True)
-
-
+            # ===== Audit material trips =====
+            st.write("### Audit: inspection of material trips")
+            audit_display = df.loc[df['energy_expected_material'].notna(),
+                                   ['activity','start time','end time','duration_minutes',
+                                    'energy_expected_material','energy consumption',
+                                    'energy_diff','energy_match']].copy()
+            audit_display['activity'] = audit_display['activity'].astype(str).str.lower().map(ACTIVITY_DISPLAY).fillna(audit_display['activity'])
+            st.dataframe(audit_display)
+        else:
+            st.info("Column 'energy consumption' (energy usage) wasn't found in the file.")
     else:
         st.info("Upload an Excel file in the sidebar to see the analysis.")
-
 
 # Tab 4: Fouten
 # hier kunnen we alle constraints in zetten waar alle data aan moet voldoen
