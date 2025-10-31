@@ -29,22 +29,22 @@ ACTIVITY_COLORS = {
 def load_data(file):
     df = pd.read_excel(file, sheet_name="Sheet1")
 
-    # times -> datetime
-    start = pd.to_datetime(df['start time'], format="%H:%M:%S", errors='coerce')
-    end   = pd.to_datetime(df['end time'],   format="%H:%M:%S", errors='coerce')
+    # ==== Tijd kolommen uniform maken ====
+    df['start time'] = pd.to_datetime(df['start time'], format="%H:%M:%S", errors='coerce')
+    df['end time']   = pd.to_datetime(df['end time'],   format="%H:%M:%S", errors='coerce')
 
-    # nacht-rollover: alleen waar beide niet NaT zijn én end < start
-    roll_mask = (end < start) & start.notna() & end.notna()
-    # cast bool -> int vóór to_timedelta (anders TypeError)
-    end_fix = end + pd.to_timedelta(roll_mask.astype(int), unit='D')
+    # Nacht-rollover fix
+    roll_mask = (df['end time'] < df['start time']) & df['start time'].notna() & df['end time'].notna()
+    df.loc[roll_mask, 'end time'] += pd.Timedelta(days=1)
 
-    # duur in minuten
-    df['duration_minutes'] = (end_fix - start).dt.total_seconds() / 60.0
+    # Duur in minuten
+    df['duration_minutes'] = (df['end time'] - df['start time']).dt.total_seconds() / 60.0
 
-    # material-trip energy fix
+    # ==== Energie verwerking ====
+    BASE_MIN, BASE_KWH = 20, 10.32
+    TOL = 0.05
     is_mat = df['activity'].astype(str).str.lower().str.contains('material')
 
-    # bestaande kWh normaliseren (komma → punt)
     if 'energy consumption' in df.columns:
         df['energy consumption'] = pd.to_numeric(
             df['energy consumption'].astype(str).str.replace(',', '.', regex=False),
@@ -54,23 +54,21 @@ def load_data(file):
         df['energy consumption'] = np.nan
 
     exp = BASE_KWH * (df['duration_minutes'] / BASE_MIN)
-
-    # audit (optioneel)
     df['energy_expected_material'] = np.where(is_mat, exp, np.nan)
     df['energy_diff'] = np.where(is_mat, df['energy consumption'] - exp, np.nan)
     df['energy_match'] = np.where(
         is_mat & (df['energy_diff'].abs() <= TOL), 'OK',
         np.where(is_mat, 'MISMATCH', '')
     )
-
-    # ✅ daadwerkelijk fixen
     df.loc[is_mat, 'energy consumption'] = exp.round(3)
 
-    # sla de gefixte tijden terug in df zodat Gantt de juiste gebruikt
-    df['start time'] = start
-    df['end time']   = end_fix
+    # ==== Zorg dat locatie strings netjes zijn ====
+    for col in ['start location', 'end location']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().str.upper()
 
     return df
+
 
 # command to see website: streamlit run dashboard.py
 
@@ -227,37 +225,75 @@ def get_battery_diagnostics(bus_df, cap_kwh, start_soc_percent):
 
 def get_timetable_diagnostics(bus_df, timetable_df):
     """
-    Return detailed timetable check diagnostics.
-    Returns dict with keys: ok(bool), message(str), violations(list of dict)
-    Each violation dict contains: idx, prev_end, curr_start, prev_end_loc, curr_start_loc, required_min, expected_min, reason
+    Controleert of service trips van bus_df passen bij timetable_df.
+    - bus_df: DataFrame met kolommen start/end time en locaties
+    - timetable_df: DataFrame met reistijd per start/end locatie, tijden als HH:MM
     """
-    g = bus_df.sort_values('start time').reset_index(drop=True).copy()
-    violations = []
-    def lookup(a, b):
-        try:
-            return float(timetable_df.loc[a, b])
-        except Exception:
+
+    # ==== Zet timetable om naar datetime.time veilig ====
+    timetable_clean = timetable_df.copy()
+    timetable_clean.index = timetable_clean.index.astype(str).str.strip().str.upper()
+    timetable_clean.columns = timetable_clean.columns.astype(str).str.strip().str.upper()
+
+    def parse_time_safe(x):
+        if pd.isna(x):
             return None
+        dt = pd.to_datetime(str(x), format="%H:%M", errors='coerce')
+        return dt.time() if pd.notna(dt) else None
+
+    timetable_clean = timetable_clean.applymap(parse_time_safe)
+
+    violations = []
+
+    # Sorteren op tijd
+    g = bus_df.sort_values('start time').reset_index(drop=True).copy()
+
+    def lookup(a, b):
+        a = str(a).strip().upper()
+        b = str(b).strip().upper()
+        if a not in timetable_clean.index or b not in timetable_clean.columns:
+            return None
+        return timetable_clean.loc[a, b]
 
     for i in range(1, len(g)):
-        prev = g.iloc[i - 1]
+        prev = g.iloc[i-1]
         curr = g.iloc[i]
-        prev_end = prev.get('end time')
-        curr_start = curr.get('start time')
-        if pd.isna(prev_end) or pd.isna(curr_start):
-            violations.append({'idx': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
+
+        prev_end = prev['end time'].time()  # alleen tijd
+        curr_start = curr['start time'].time()
+
+        expected_time = lookup(prev['end location'], curr['start location'])
+        if expected_time is None:
+            violations.append({
+                'idx': i,
+                'reason': 'missing_timetable',
+                'prev_end_loc': prev['end location'],
+                'curr_start_loc': curr['start location']
+            })
             continue
-        required = (curr_start - prev_end).total_seconds() / 60.0
-        expected = lookup(prev.get('end location'), curr.get('start location'))
-        if expected is None:
-            violations.append({'idx': i, 'reason': 'missing_timetable', 'prev_end_loc': prev.get('end location'), 'curr_start_loc': curr.get('start location')})
-            continue
-        if required < expected - 1e-6:
-            violations.append({'idx': i, 'reason': 'insufficient_travel_time', 'prev_end': prev_end, 'curr_start': curr_start, 'required_min': required, 'expected_min': expected, 'prev_line': prev.get('activity'), 'curr_line': curr.get('activity')})
+
+        # Bereken beschikbare minuten
+        required_min = (pd.Timestamp.combine(pd.Timestamp.today(), curr_start) - 
+                        pd.Timestamp.combine(pd.Timestamp.today(), prev_end)).total_seconds() / 60.0
+        expected_min = (pd.Timestamp.combine(pd.Timestamp.today(), expected_time) - 
+                        pd.Timestamp.combine(pd.Timestamp.today(), prev_end)).total_seconds() / 60.0
+
+        if required_min < expected_min - 1e-6:
+            violations.append({
+                'idx': i,
+                'reason': 'insufficient_travel_time',
+                'prev_end': prev_end,
+                'curr_start': curr_start,
+                'required_min': required_min,
+                'expected_min': expected_min,
+                'prev_line': prev['activity'],
+                'curr_line': curr['activity']
+            })
 
     if violations:
         return {'ok': False, 'message': f"{len(violations)} timetable violation(s)", 'violations': violations}
     return {'ok': True, 'message': 'Timing OK', 'violations': []}
+
 
 # Tab 1: Gantt Chart
 with tab_gantt:
