@@ -364,15 +364,6 @@ def render_plan_card(plan_title, df, timetable):
     pie.update_traces(textposition='inside', texttemplate='%{label}<br>%{percent:.0%}')
     st.plotly_chart(pie, use_container_width=True)
 
-    st.metric(label="KPI score (plan)", value=f"{stats['kpi']}/100")
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Service trips not on time", f"{stats['late_service_trips']}")
-    with c2:
-        st.metric("Buses in plan", f"{stats['n_buses']}")
-    with c3:
-        st.metric("Buses that make charge", f"{stats['ok_buses']} / {stats['n_buses']}")
 
 # Tab 1: Gantt Chart
 with tab_gantt:
