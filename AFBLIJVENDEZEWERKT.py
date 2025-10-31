@@ -78,8 +78,24 @@ def load_data(file):
 st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
 st.title("🚌 Bus Planning dashboard")
 
-# Sidebar: upload Excel-bestand
-uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
+# Sidebar: Excel file uploaders and preview
+with st.sidebar:
+    uploaded_file = st.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
+    
+    if uploaded_file is not None:
+        df = load_data(uploaded_file)
+        st.success("File loaded successfully!")
+        with st.expander("Preview data"):
+            st.dataframe(df, use_container_width=True)
+    else:
+        st.info("Please upload a busplan Excel file to begin.")
+
+    # Global timetable uploader (optional)
+    uploaded_tt = st.file_uploader("Upload Timetable (Excel) (optional)", type=["xlsx"], key="uploaded_tt")
+if uploaded_tt:
+    st.session_state['uploaded_tt'] = uploaded_tt
+else:
+    uploaded_tt = st.session_state.get('uploaded_tt', None)
 
 # Tabs bovenaan
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
