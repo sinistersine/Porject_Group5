@@ -373,126 +373,6 @@ def render_plan_card(plan_title, df, timetable):
         st.metric("Buses in plan", f"{stats['n_buses']}")
     with c3:
         st.metric("Buses that make charge", f"{stats['ok_buses']} / {stats['n_buses']}")
-def _parse_departure_series(dep_series: pd.Series) -> pd.Series:
-    """
-    Probeert 'departure time' te parsen naar een pandas Timedelta (tijd vd dag).
-    Accepteert 'HH:MM' of 'HH:MM:SS'. Alles anders -> NaT.
-    """
-    s = dep_series.astype(str).str.strip()
-    td = pd.to_timedelta(s, errors='coerce')  # werkt voor HH:MM[:SS]
-    return td
-
-def _align_to_same_day(start_times: pd.Series, dep_td: pd.Series) -> pd.Series:
-    """
-    Zet een tijd-van-de-dag (Timedelta) op dezelfde kalenderdag als start_times.
-    Gaat uit van 'zelfde dag'; als je over-midnight departures hebt kun je dit uitbreiden.
-    """
-    base_day = pd.to_datetime(start_times).dt.normalize()
-    dep_dt = base_day + dep_td
-    return dep_dt
-
-def check_departure_alignment(df_plan: pd.DataFrame, timetable: pd.DataFrame, tolerance_minutes: int = 1):
-    """
-    Checkt voor elke SERVICE TRIP of de 'start time' (busplan) ≈ 'departure time' (timetable).
-    We proberen slim te mergen:
-      - Eerst op ['line','start location'] als timetable die kolommen heeft
-      - Anders alleen op ['start location'] (laatste fallback)
-    timetable moet een kolom 'departure time' hebben met tijden als HH:MM of HH:MM:SS.
-    Return:
-      dict(ok_count, miss_count, mismatches_df)
-    """
-    if timetable is None or df_plan is None or df_plan.empty:
-        return {"ok_count": 0, "miss_count": 0, "mismatches": pd.DataFrame()}
-
-    d = df_plan.copy()
-    d['activity'] = d['activity'].astype(str).str.lower().str.strip()
-    svc = d[d['activity'] == 'service trip'].copy()
-    if svc.empty:
-        return {"ok_count": 0, "miss_count": 0, "mismatches": pd.DataFrame()}
-
-    # Zorg dat de vereiste kolommen bestaan
-    for col in ['start time', 'start location']:
-        if col not in svc.columns:
-            return {"ok_count": 0, "miss_count": len(svc), "mismatches": svc.assign(reason=f"missing column '{col}'")}
-
-    # Maak timetable kopie met standaard kolomnamen
-    tt = timetable.copy()
-    # normaliseer kolomnamen lower
-    tt.columns = [str(c).strip().lower() for c in tt.columns]
-    # ook indexnaam lower voor safety
-    if tt.index.name:
-        tt.index.name = str(tt.index.name).strip().lower()
-
-    # detecteer 'departure time' kolom
-    dep_col_candidates = [c for c in tt.columns if c in ('departure time', 'departure_time', 'dep_time', 'vertrektijd')]
-    if not dep_col_candidates:
-        return {"ok_count": 0, "miss_count": len(svc), "mismatches": svc.assign(reason="no 'departure time' column in timetable")}
-    dep_col = dep_col_candidates[0]
-
-    # breng 'start location' in timetable als kolom (als het de index is)
-    if 'start location' not in [c for c in tt.columns]:
-        # als index de startloc is: zet ‘m om naar kolom
-        if tt.index.name in ('start location', 'start_location', 'beginhalte', 'halte'):
-            tt = tt.reset_index().rename(columns={tt.columns[0]: 'start location'})
-        else:
-            # geen idee waar start location staat -> fail
-            return {"ok_count": 0, "miss_count": len(svc), "mismatches": svc.assign(reason="no 'start location' in timetable")}
-
-    # optioneel line kolom
-    has_line_in_tt = 'line' in tt.columns
-
-    # merge-strategie
-    if has_line_in_tt and 'line' in svc.columns:
-        merged = pd.merge(
-            svc,
-            tt[['start location', 'line', dep_col]],
-            how='left',
-            on=['start location', 'line'],
-            suffixes=('', '_tt')
-        )
-    else:
-        merged = pd.merge(
-            svc,
-            tt[['start location', dep_col]],
-            how='left',
-            on=['start location'],
-            suffixes=('', '_tt')
-        )
-
-    # parse departure naar timedelta en alignen naar dezelfde dag als start time
-    dep_td = _parse_departure_series(merged[dep_col])
-    dep_dt = _align_to_same_day(merged['start time'], dep_td)
-
-    # diff in minuten (abs)
-    start_dt = pd.to_datetime(merged['start time'], errors='coerce')
-    diff_min = (start_dt - dep_dt).abs().dt.total_seconds() / 60.0
-
-    merged['timetable_departure'] = dep_dt
-    merged['diff_minutes'] = diff_min
-
-    tol = float(tolerance_minutes)
-    mism = merged[(merged['timetable_departure'].isna()) | (merged['diff_minutes'] > tol)].copy()
-
-    # output only relevante kolommen
-    cols = [c for c in ['bus','line','start location','start time','timetable_departure','diff_minutes','end location'] if c in mism.columns]
-    mismatches = mism[cols].sort_values(['bus','start time']).reset_index(drop=True)
-
-    miss_count = len(mismatches)
-    ok_count = len(merged) - miss_count
-    return {"ok_count": ok_count, "miss_count": miss_count, "mismatches": mismatches}
-
-def render_departure_check(plan_title: str, df_plan: pd.DataFrame, timetable: pd.DataFrame, tolerance_minutes: int = 1):
-    """
-    UI-weergave: toont samenvatting + details (mismatches) voor vertrek vs start.
-    """
-    st.markdown(f"**Departure-time check — {plan_title}** (tolerantie: ±{tolerance_minutes} min)")
-    res = check_departure_alignment(df_plan, timetable, tolerance_minutes=tolerance_minutes)
-    if res['miss_count'] == 0:
-        st.success(f"Alle service trips matchen met de timetable (n={res['ok_count']}).")
-    else:
-        st.error(f"{res['miss_count']} service trips matchen NIET (ok: {res['ok_count']}).")
-        with st.expander("Toon mismatches"):
-            st.dataframe(res['mismatches'], use_container_width=True)
 
 # Tab 1: Gantt Chart
 with tab_gantt:
@@ -844,25 +724,14 @@ with tab_kpi:
         if uploaded_file:
             try:
                 old_df = load_data(uploaded_file)
+                # toont: Pie (service/material/idle), KPI score (plan), + 3 metrics
                 render_plan_card("OLD — KPI", old_df, timetable)
-                # ✅ Departure vs Start check (OLD)
-                if timetable is not None:
-                    render_departure_check("OLD", old_df, timetable, tolerance_minutes=1)
-                else:
-                    st.info("Upload een Timetable om departure-times te checken.")
             except Exception as e:
                 st.error(f"Old busplan verwerken mislukte: {e}")
         else:
             st.info("Upload het **oude** busplan in de sidebar om KPIs te zien.")
-    
+
     # --- NEW PLAN (rechts) ---
-        with col_new:
-            st.markdown("#### New busplan (upload hier)")
-            new_upload = st.file_uploader(
-            "Upload NEW busplan (Excel)",
-            type=["xlsx"],
-            key="new_busplan_upload"
-        )
     with col_new:
         st.markdown("#### New busplan (upload hier)")
         new_upload = st.file_uploader(
@@ -873,13 +742,10 @@ with tab_kpi:
         if new_upload:
             try:
                 new_df = load_data(new_upload)
+                # idem: Pie + KPI + metrics
                 render_plan_card("NEW — KPI", new_df, timetable)
-                # ✅ Departure vs Start check (NEW)
-                if timetable is not None:
-                    render_departure_check("NEW", new_df, timetable, tolerance_minutes=1)
-                else:
-                    st.info("Upload een Timetable om departure-times te checken.")
             except Exception as e:
                 st.error(f"New busplan verwerken mislukte: {e}")
         else:
             st.info("Upload het **nieuwe** busplan om te vergelijken.")
+#
