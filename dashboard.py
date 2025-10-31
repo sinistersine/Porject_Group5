@@ -1,5 +1,4 @@
 # streamlit run dashboard.py  (dit is wat je in terminal typt om de app te runnen)
-from ftplib import all_errors
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -262,66 +261,66 @@ def get_timetable_diagnostics(bus_df, timetable_df):
 
 with tab_gantt:
     st.subheader("📊 Gantt Chart")
+
+    # Veilig initialiseren
+    df = None
+    selected_buses = []
+
     if uploaded_file:
-        df = load_data(uploaded_file)
-
-        # Lijst van unieke bussen
-        bus_options = sorted(df['bus'].dropna().unique())
-        selected_buses = st.multiselect(
-            "Select one or multiple busses (or 'All busses')",
-            options=[0] + bus_options,
-            default=[0],
-            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses",
-            key="selected_buses"
-        )
-
-
-
-        # ---- Run feasibility checks for displayed buses ----
-        # determine bus ids to check
-        if 0 in selected_buses or not selected_buses:
-            buses_to_check = sorted(df['bus'].dropna().unique())
-        else:
-            buses_to_check = [b for b in selected_buses if b in df['bus'].values]
-
-        # try to load timetable from uploaded or local file
-        timetable = None
         try:
-            g = globals()
-            if 'uploaded_tt' in g and g['uploaded_tt'] is not None:
-                timetable = pd.read_excel(g['uploaded_tt'], index_col=0)
+            # Data laden
+            df = load_data(uploaded_file)
+
+            # Bus multiselect
+            bus_options = sorted(df['bus'].dropna().unique())
+            selected_buses = st.multiselect(
+                "Selecteer bus(s) (of 'All busses')",
+                options=[0] + bus_options,
+                default=[0],
+                format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses"
+            )
+
+            # Feasibility checks per bus
+            timetable = None
+            if 'uploaded_tt' in st.session_state:
+                timetable = st.session_state['uploaded_tt']
             elif os.path.exists('Timetable.xlsx'):
                 timetable = pd.read_excel('Timetable.xlsx', index_col=0)
-            else:
-                timetable = None
-        except Exception:
-            timetable = None
 
-        any_fail = False
-        # read cap_kwh and start_soc if available (from visualization controls), otherwise defaults
-        g = globals()
-        cap = g.get('cap_kwh', 300.0)
-        soc0 = g.get('start_soc', 100)
-        for bus_id in buses_to_check:
-            bus_df = df[df['bus'] == bus_id].copy()
-            ok_batt, batt_msg = check_bus_battery_survival(bus_df, cap, soc0)
-            if not ok_batt:
-                st.error(batt_msg)
-                any_fail = True
-                break
-            if timetable is not None:
-                ok_time, time_msg = check_bus_timetable_feasible(bus_df, timetable)
-                if not ok_time:
-                    st.error(time_msg)
+            any_fail = False
+            cap = st.session_state.get('cap_kwh', 300.0)
+            soc0 = st.session_state.get('start_soc', 100)
+            if 0 in selected_buses:
+                buses_to_check = sorted(df['bus'].dropna().unique())
+            else:
+                buses_to_check = [b for b in selected_buses if b in df['bus'].values]
+
+            for bus_id in buses_to_check:
+                bus_df = df[df['bus'] == bus_id].copy()
+                ok_batt, batt_msg = check_bus_battery_survival(bus_df, cap, soc0)
+                if not ok_batt:
+                    st.error(batt_msg)
                     any_fail = True
                     break
+                if timetable is not None:
+                    ok_time, time_msg = check_bus_timetable_feasible(bus_df, timetable)
+                    if not ok_time:
+                        st.error(time_msg)
+                        any_fail = True
+                        break
 
-        if not any_fail:
-            st.success("Selected busplan(s) appear feasible.")
+            if not any_fail:
+                st.success("Selected busplan(s) appear feasible.")
 
-    fig = plot_gantt_interactive(df, selected_buses)
-    st.plotly_chart(fig, use_container_width=True)
+            # Plot Gantt chart
+            fig = plot_gantt_interactive(df, selected_buses)
+            st.plotly_chart(fig, use_container_width=True)
 
+        except Exception as e:
+            st.error(f"Kon de Gantt-chart niet weergeven: {e}")
+
+    else:
+        st.info("Upload een Excel-bestand in de sidebar om de Gantt Chart te zien.")
 
 # Tab 2: Visualizations
 with tab_visuals:
@@ -449,55 +448,17 @@ with tab_analysis:
     if uploaded_file:
         df = load_data(uploaded_file)          
 
-
-        # === NIEUW BLOK: Gemiddelde duur per activiteit per lijn ===
+        # lijn als string (voor latere analyses)
         df['line_str'] = df['line'].astype(str).str.replace('.0', '', regex=False)
 
-        avg_duration_per_line_activity = (
-            df.groupby(['line_str', 'activity'], dropna=False)['duration_minutes']
-              .mean()
-              .reset_index()
-              .rename(columns={'line_str': 'line'})
+        # ===== Total duration per bus =====
+        total_duration_per_bus = (
+            df.groupby('bus', as_index=False)['duration_minutes']
+              .sum()
+              .rename(columns={'duration_minutes': 'total_duration_minutes'})
         )
 
-        st.write("### Average duration per activity **per bus** (in minutes)")
-        avg_duration_per_bus_activity = (
-            df.groupby(['bus', 'activity'], dropna=False)['duration_minutes']
-            .mean()
-            .reset_index()
-            .sort_values(['bus', 'activity'])
-        )
-        
-        st.dataframe(
-            avg_duration_per_bus_activity.pivot(
-                index='bus',
-                columns='activity',
-                values='duration_minutes'
-                ).round(2)
-             .rename(columns=lambda c: ACTIVITY_DISPLAY.get(str(c).lower(), c)),
-            use_container_width=True
-        )
-
-        # Alleen material trips per lijn
-        mat = df['activity'].str.lower().eq('material trip')
-        avg_material_per_line = (
-            df.loc[mat]
-              .groupby('line_str', dropna=False)['duration_minutes']
-              .mean()
-              .reset_index()
-              .rename(columns={'line_str': 'line', 'duration_minutes': 'avg_material_duration_min'})
-              .sort_values('line')
-        )
-
-
-
-        st.write("### Total duration per bus (in minutes)")
-        total_duration_per_bus = (df.groupby('bus', as_index=False)['duration_minutes']
-                                    .sum()
-                                    .rename(columns={'duration_minutes': 'total_duration_minutes'}))
-        st.dataframe(total_duration_per_bus)
-
-        # Energie-analyse (nu al gefixt voor material trips)
+        # ===== Energie-analyse =====
         if 'energy consumption' in df.columns:
             per_bus = df.groupby('bus', as_index=False).agg(
                 consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
@@ -507,9 +468,13 @@ with tab_analysis:
             BATTERY_KWH = 300.0
             per_bus['end_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
 
-            st.write("### Energy per bus (kWh) + end-SOC estimate")
-            st.dataframe(per_bus.sort_values('netto_kWh', ascending=False), use_container_width=True)
+            # ===== Merge total duration + energie =====
+            bus_summary = pd.merge(total_duration_per_bus, per_bus, on='bus', how='outer')
 
+            st.write("### Bus summary: Total duration + Energy + end-SOC")
+            st.dataframe(bus_summary.sort_values('bus'), use_container_width=True)
+
+            # ===== Audit material trips =====
             st.write("### Audit: inspection of material trips")
             audit_display = df.loc[df['energy_expected_material'].notna(),
                                    ['activity','start time','end time','duration_minutes',
