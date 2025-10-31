@@ -461,14 +461,13 @@ with tab_analysis:
         # ===== Energie-analyse =====
         if 'energy consumption' in df.columns:
             per_bus = df.groupby('bus', as_index=False).agg(
-                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
-                charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum())
+                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum())
             )
 
             # ===== Merge total duration + energie =====
             bus_summary = pd.merge(total_duration_per_bus, per_bus, on='bus', how='outer')
 
-            st.write("### Bus summary: Total duration + Energy")
+            st.write("### Total duration + Energy per bus")
             st.dataframe(bus_summary.sort_values('bus'), use_container_width=True)
 
             # ===== Summary per bus per activity (zonder energy) =====
