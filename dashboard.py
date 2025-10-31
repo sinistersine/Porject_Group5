@@ -82,7 +82,11 @@ st.title("🚌 Bus Planning dashboard")
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
+<<<<<<< Updated upstream
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
+=======
+tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors"])
+>>>>>>> Stashed changes
 
 # Functie om Gantt Chart te plotten (één of meerdere bussen)
 def plot_gantt_interactive(df, selected_buses=None):
