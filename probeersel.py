@@ -674,11 +674,11 @@ with tab_kpi:
         # Idle penalty = idle_ratio * 20 per bus
         total_idle_penalty = (kpi_df['idle_ratio'] * 20).sum()
 
-        # Battery penalty = battery_violation * 40 per bus
-        total_battery_penalty = (kpi_df['battery_violation'] * 40).sum()
+        # Battery penalty = battery_violation * 30 per bus
+        total_battery_penalty = (kpi_df['battery_violation'] * 30).sum()
 
-        # Schedule penalty = schedule_violation * 40 per bus
-        total_schedule_penalty = (kpi_df['schedule_violation'] * 40).sum()
+        # Schedule penalty = schedule_violation * 50 per bus
+        total_schedule_penalty = (kpi_df['schedule_violation'] * 50).sum()
 
         # Remaining score = 100 per bus minus alle penalties
         total_remaining_score = 100 * n_buses - (total_idle_penalty + total_battery_penalty + total_schedule_penalty)
