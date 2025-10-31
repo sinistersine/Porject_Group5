@@ -475,6 +475,9 @@ with tab_analysis:
                 charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
                 netto_kWh   =('energy consumption', 'sum'),
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -487,7 +490,11 @@ with tab_analysis:
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             st.write("### Total duration + Energy per bus")
+=======
+            st.write("### Bus summary: Total duration + Energy + end-SOC")
+>>>>>>> Stashed changes
 =======
             st.write("### Bus summary: Total duration + Energy + end-SOC")
 >>>>>>> Stashed changes
