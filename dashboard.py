@@ -474,6 +474,9 @@ with tab_analysis:
                 consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
                 charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
                 netto_kWh   =('energy consumption', 'sum'),
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             )
             BATTERY_KWH = 300.0
@@ -483,7 +486,11 @@ with tab_analysis:
             bus_summary = pd.merge(total_duration_per_bus, per_bus, on='bus', how='outer')
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             st.write("### Total duration + Energy per bus")
+=======
+            st.write("### Bus summary: Total duration + Energy + end-SOC")
+>>>>>>> Stashed changes
 =======
             st.write("### Bus summary: Total duration + Energy + end-SOC")
 >>>>>>> Stashed changes
