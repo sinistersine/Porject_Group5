@@ -80,7 +80,7 @@ st.title("🚌 Bus Planning dashboard")
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
-tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
+tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI"])
 
 # Functie om Gantt Chart te plotten (één of meerdere bussen)
 def plot_gantt_interactive(df, selected_buses=None):
@@ -620,7 +620,7 @@ with tab_errors:
 
 # Tab 5: KPI Dashboard
 with tab_kpi:
-    st.subheader("📊 KPI Dashboard (Score + Timetable Check)")
+    st.subheader("📊 KPI")
 
     if uploaded_file:
         df = load_data(uploaded_file)
@@ -665,8 +665,6 @@ with tab_kpi:
         # fig_kpi = px.bar(...)
         # st.plotly_chart(fig_kpi, use_container_width=True)  # <-- weggehaald
 
-        # Samengevoegde KPI compositie voor het hele busplan – gebruik bestaande kolommen
-        st.write("### KPI Composition – Entire Bus Plan")
 
         # Totaal aantal bussen
         n_buses = len(kpi_df)
@@ -674,16 +672,16 @@ with tab_kpi:
         # Idle penalty = idle_ratio * 20 per bus
         total_idle_penalty = (kpi_df['idle_ratio'] * 20).sum()
 
-        # Battery penalty = battery_violation * 30 per bus
-        total_battery_penalty = (kpi_df['battery_violation'] * 30).sum()
+        # Battery penalty = battery_violation * 40 per bus
+        total_battery_penalty = (kpi_df['battery_violation'] * 40).sum()
 
-        # Schedule penalty = schedule_violation * 50 per bus
-        total_schedule_penalty = (kpi_df['schedule_violation'] * 50).sum()
+        # Schedule penalty = schedule_violation * 40 per bus
+        total_schedule_penalty = (kpi_df['schedule_violation'] * 40).sum()
 
         # Remaining score = 100 per bus minus alle penalties
         total_remaining_score = 100 * n_buses - (total_idle_penalty + total_battery_penalty + total_schedule_penalty)
 
-        labels = ['Idle Penalty', 'Battery Violation', 'Schedule Violation', 'Remaining Score']
+        labels = ['Idle Penalty', 'Battery Violation', 'Schedule Violation', 'KPI Score']
         values = [total_idle_penalty, total_battery_penalty, total_schedule_penalty, total_remaining_score]
 
         # KPI Score voor het hele busplan
