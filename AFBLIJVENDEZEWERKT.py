@@ -381,7 +381,7 @@ with tab_gantt:
             # Bus multiselect
             bus_options = sorted(df['bus'].dropna().unique())
             selected_buses = st.multiselect(
-                "Selecteer bus(s) (of 'All busses')",
+                "Select bus(ses) (or 'All busses')",
                 options=[0] + bus_options,
                 default=[0],
                 format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses"
@@ -424,10 +424,10 @@ with tab_gantt:
             st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
-            st.error(f"Kon de Gantt-chart niet weergeven: {e}")
+            st.error(f"Could not display the Gantt chart: {e}")
 
     else:
-        st.info("Upload een Excel-bestand in de sidebar om de Gantt Chart te zien.")
+        st.info("Upload an Excel file in the sidebar to see the Gantt Chart.")
 # Tab 2: Visualisations
 with tab_visuals:
     st.subheader("📈 Visualisation")
@@ -612,7 +612,7 @@ with tab_errors:
     st.write("Here is a list of errors detected in the planning (feasibility checks).")
 
         # Option: only show buses selected in the Gantt
-    only_selected = st.checkbox("Toon alleen bussen geselecteerd in Gantt", value=False, key="errors_only_selected")
+    only_selected = st.checkbox("Show only buses selected in Gantt", value=False, key="errors_only_selected")
 
     # ---- Load bus plan and timetable, then run per-bus checks ----
     try:
@@ -666,7 +666,7 @@ with tab_errors:
         # display per-bus expanders with diagnostics
         st.write("### Detailed diagnostics per bus")
         if not buses_to_show:
-            st.info("Geen bussen om te tonen met de huidige filterinstellingen.")
+            st.info("No buses to show with the current filter settings.")
         for bus in buses_to_show:
             d = diagnostics[bus]
             batt = d['battery']
@@ -695,7 +695,7 @@ with tab_kpi:
 
     # 1) Één timetable voor beide plannen (voor 'on-time' checks)
     uploaded_tt_file = st.file_uploader(
-        "Upload Timetable (Excel) — gebruikt voor on-time checks",
+        "Upload Timetable (Excel) — used for on-time checks",
         type=["xlsx"],
         key="tt_upload_global"
     )
@@ -705,7 +705,7 @@ with tab_kpi:
             timetable = pd.read_excel(uploaded_tt_file, index_col=0)
             st.success("Timetable uploaded successfully!")
         except Exception as e:
-            st.error(f"Timetable lezen faalde: {e}")
+            st.error(f"Timetable reading failed: {e}")
 
     # 2) Links: OUD plan (sidebar-uploader). Rechts: NIEUW plan (extra uploader).
     col_old, col_new = st.columns(2, gap="large")
@@ -718,13 +718,13 @@ with tab_kpi:
                 old_df = load_data(uploaded_file)
                 render_plan_card("OLD — KPI", old_df, timetable)
             except Exception as e:
-                st.error(f"Old busplan verwerken mislukte: {e}")
+                st.error(f"Old busplan processing failed: {e}")
         else:
-            st.info("Upload het **oude** busplan in de sidebar om KPIs te zien.")
+            st.info("Upload the **old** busplan in the sidebar to see KPIs.")
 
     # --- NEW PLAN (rechts) ---
     with col_new:
-        st.markdown("#### New busplan (upload hier)")
+        st.markdown("#### New busplan (upload here)")
         new_upload = st.file_uploader(
             "Upload NEW busplan (Excel)",
             type=["xlsx"],
@@ -735,11 +735,11 @@ with tab_kpi:
                 new_df = load_data(new_upload)
                 render_plan_card("NEW — KPI", new_df, timetable)
             except Exception as e:
-                st.error(f"New busplan verwerken mislukte: {e}")
+                st.error(f"New busplan processing failed: {e}")
         else:
-            st.info("Upload het **nieuwe** busplan om te vergelijken.")
+            st.info("Upload the **new** busplan to compare.")
 
-    # --- KPI Berekening en Pie Chart links van KPI-cijfers ---
+    # --- KPI Calculation and Pie Chart left of KPI figures ---
     if uploaded_file:
         df = load_data(uploaded_file)
 
@@ -804,5 +804,5 @@ with tab_kpi:
 
 
     else:
-        st.info("Upload een Excel-bestand met het busplan in de sidebar om KPI's te bekijken.")
+        st.info("Upload an Excel file with the bus plan in the sidebar to view KPIIs.")
 
