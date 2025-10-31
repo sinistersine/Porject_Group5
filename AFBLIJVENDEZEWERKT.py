@@ -4,6 +4,10 @@ import pandas as pd
 import plotly.express as px
 import os
 import numpy as np
+# Pagina-instellingen
+st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
+st.title("🚌 Bus Planning dashboard")
+
 
 # === material-trip energy rule ===
 BASE_MIN, BASE_KWH = 20, 10.32   # 20 min → 10.32 kWh
@@ -80,9 +84,6 @@ if 'df' not in st.session_state:
 if 'timetable_df' not in st.session_state:
     st.session_state['timetable_df'] = None
 
-# Pagina-instellingen
-st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
-st.title("🚌 Bus Planning dashboard")
 
 # Sidebar: Excel file uploaders and preview
 with st.sidebar:
