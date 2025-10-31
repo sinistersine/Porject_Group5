@@ -712,6 +712,14 @@ with tab_kpi:
 
         st.plotly_chart(fig_pie_total, use_container_width=True)
 
+        
+        # KPI Score voor het hele busplan
+        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
+        overall_kpi_score = 100 - (total_penalties / n_buses)
+        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
+
+        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
+
 
 
     else:
