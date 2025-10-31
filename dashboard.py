@@ -661,20 +661,10 @@ with tab_kpi:
         kpi_df['kpi_score'] = 100 - (kpi_df['idle_ratio'] * 50 + kpi_df['battery_violation'] * 20 + kpi_df['schedule_violation'] * 20)
         kpi_df['kpi_score'] = kpi_df['kpi_score'].clip(0,100)
 
-        # Visualiseer KPI-score
-        fig_kpi = px.bar(
-            kpi_df,
-            x='bus',
-            y='kpi_score',
-            title="KPI Score per Bus (0=inefficiënt, 100=perfect)",
-            color='kpi_score',
-            color_continuous_scale='Viridis',
-            labels={'kpi_score': 'KPI Score', 'bus': 'Bus'}
-        )
-        st.plotly_chart(fig_kpi, use_container_width=True)
+        # --- Verwijder bar chart per bus ---
+        # fig_kpi = px.bar(...)
+        # st.plotly_chart(fig_kpi, use_container_width=True)  # <-- weggehaald
 
-        
-        
         # Samengevoegde KPI compositie voor het hele busplan – gebruik bestaande kolommen
         st.write("### KPI Composition – Entire Bus Plan")
 
@@ -696,6 +686,14 @@ with tab_kpi:
         labels = ['Idle Penalty', 'Battery Violation', 'Schedule Violation', 'Remaining Score']
         values = [total_idle_penalty, total_battery_penalty, total_schedule_penalty, total_remaining_score]
 
+        # KPI Score voor het hele busplan
+        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
+        overall_kpi_score = 100 - (total_penalties / n_buses)
+        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
+
+        # --- Zet trofee en KPI-score boven pie chart ---
+        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
+
         fig_pie_total = px.pie(
             names=labels,
             values=values,
@@ -711,36 +709,6 @@ with tab_kpi:
         fig_pie_total.update_traces(textinfo='percent+label')
 
         st.plotly_chart(fig_pie_total, use_container_width=True)
-
-        
-        # KPI Score voor het hele busplan
-        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
-        overall_kpi_score = 100 - (total_penalties / n_buses)
-        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
-
-        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
-
-        # KPI Score voor het hele busplan
-        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
-        overall_kpi_score = 100 - (total_penalties / n_buses)
-        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
-
-        # Toon KPI-score
-        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
-
-        # Uitleg erbij
-        st.markdown("""
-        **How the KPI score is calculated:**
-
-        1. **Idle Penalty:** For each bus, the fraction of idle time (`idle_minutes / total_minutes`) is multiplied by 40.  
-        2. **Battery Violation Penalty:** For each bus, if the bus ever drops below 10% SOC, a penalty of 30 is added.  
-        3. **Schedule Violation Penalty:** For each bus, if the timetable is violated, a penalty of 30 is added.  
-        4. **Busplan KPI Score:** Sum all penalties across all buses, divide by the number of buses to get average penalty per bus, then subtract from 100.  
-        - Formula: `KPI = 100 - (total_penalties / number_of_buses)`  
-        5. **Score range:** 0 = very inefficient / many issues, 100 = perfect bus plan.
-        """)
-
-
 
     else:
         st.info("Upload een Excel-bestand met het busplan in de sidebar om KPI's te bekijken.")

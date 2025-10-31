@@ -289,3 +289,128 @@ with tab_analysis:
 with tab_errors:
     st.subheader("🚨 Fouten")
     st.write("Hier kun je een lijst tonen van alle fouten die zijn opgetreden tijdens de planning.")
+with tab_kpi:
+    st.subheader("📊 KPI Dashboard (Score + Timetable Check)")
+
+    if uploaded_file:
+        df = load_data(uploaded_file)
+
+        # Upload timetable bestand
+        uploaded_tt_file = st.file_uploader("Upload Timetable (Excel)", type=["xlsx"], key="tt_upload")
+        timetable = None
+        if uploaded_tt_file:
+            timetable = pd.read_excel(uploaded_tt_file, index_col=0)
+            st.success("Timetable uploaded successfully!")
+
+        # Bereken KPI zoals eerder
+        total_time = df.groupby('bus')['duration_minutes'].sum().reset_index().rename(columns={'duration_minutes':'total_minutes'})
+        idle_time = df[df['activity'].str.lower()=='idle'].groupby('bus')['duration_minutes'].sum().reset_index().rename(columns={'duration_minutes':'idle_minutes'})
+        kpi_df = pd.merge(total_time, idle_time, on='bus', how='left').fillna(0)
+        kpi_df['idle_ratio'] = kpi_df['idle_minutes'] / kpi_df['total_minutes']
+
+        # Battery violations
+        battery_violations = []
+        for bus_id, group in df.groupby('bus'):
+            batt_diag = get_battery_diagnostics(group, cap_kwh=300, start_soc_percent=100)
+            battery_violations.append(0 if batt_diag['ok'] else 1)
+        kpi_df['battery_violation'] = battery_violations
+
+        # Schedule violations (timetable checks)
+        schedule_violations = []
+        timetable_violations_detail = {}
+        for bus_id, group in df.groupby('bus'):
+            if timetable is not None:
+                tt_diag = get_timetable_diagnostics(group, timetable)
+                schedule_violations.append(0 if tt_diag['ok'] else 1)
+                timetable_violations_detail[bus_id] = tt_diag['violations']
+            else:
+                schedule_violations.append(0)
+        kpi_df['schedule_violation'] = schedule_violations
+
+        # KPI score
+        kpi_df['kpi_score'] = 100 - (kpi_df['idle_ratio'] * 50 + kpi_df['battery_violation'] * 20 + kpi_df['schedule_violation'] * 20)
+        kpi_df['kpi_score'] = kpi_df['kpi_score'].clip(0,100)
+
+        # Visualiseer KPI-score
+        fig_kpi = px.bar(
+            kpi_df,
+            x='bus',
+            y='kpi_score',
+            title="KPI Score per Bus (0=inefficiënt, 100=perfect)",
+            color='kpi_score',
+            color_continuous_scale='Viridis',
+            labels={'kpi_score': 'KPI Score', 'bus': 'Bus'}
+        )
+        st.plotly_chart(fig_kpi, use_container_width=True)
+
+        
+        
+        # Samengevoegde KPI compositie voor het hele busplan – gebruik bestaande kolommen
+        st.write("### KPI Composition – Entire Bus Plan")
+
+        # Totaal aantal bussen
+        n_buses = len(kpi_df)
+
+        # Idle penalty = idle_ratio * 20 per bus
+        total_idle_penalty = (kpi_df['idle_ratio'] * 20).sum()
+
+        # Battery penalty = battery_violation * 30 per bus
+        total_battery_penalty = (kpi_df['battery_violation'] * 30).sum()
+
+        # Schedule penalty = schedule_violation * 50 per bus
+        total_schedule_penalty = (kpi_df['schedule_violation'] * 50).sum()
+
+        # Remaining score = 100 per bus minus alle penalties
+        total_remaining_score = 100 * n_buses - (total_idle_penalty + total_battery_penalty + total_schedule_penalty)
+
+        labels = ['Idle Penalty', 'Battery Violation', 'Schedule Violation', 'Remaining Score']
+        values = [total_idle_penalty, total_battery_penalty, total_schedule_penalty, total_remaining_score]
+
+        fig_pie_total = px.pie(
+            names=labels,
+            values=values,
+            title="Overall KPI Breakdown – Entire Bus Plan",
+            color_discrete_map={
+                'Idle Penalty': 'orange',
+                'Battery Violation': 'red',
+                'Schedule Violation': 'purple',
+                'Remaining Score': 'green'
+            }
+        )
+
+        fig_pie_total.update_traces(textinfo='percent+label')
+
+        st.plotly_chart(fig_pie_total, use_container_width=True)
+
+        
+        # KPI Score voor het hele busplan
+        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
+        overall_kpi_score = 100 - (total_penalties / n_buses)
+        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
+
+        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
+
+        # KPI Score voor het hele busplan
+        total_penalties = total_idle_penalty + total_battery_penalty + total_schedule_penalty
+        overall_kpi_score = 100 - (total_penalties / n_buses)
+        overall_kpi_score = max(0, min(overall_kpi_score, 100))  # clip tussen 0 en 100
+
+        # Toon KPI-score
+        st.markdown(f"### 🏆 Overall KPI Score for Bus Plan: **{overall_kpi_score:.2f} / 100**")
+
+        # Uitleg erbij
+        st.markdown("""
+        **How the KPI score is calculated:**
+
+        1. **Idle Penalty:** For each bus, the fraction of idle time (`idle_minutes / total_minutes`) is multiplied by 40.  
+        2. **Battery Violation Penalty:** For each bus, if the bus ever drops below 10% SOC, a penalty of 30 is added.  
+        3. **Schedule Violation Penalty:** For each bus, if the timetable is violated, a penalty of 30 is added.  
+        4. **Busplan KPI Score:** Sum all penalties across all buses, divide by the number of buses to get average penalty per bus, then subtract from 100.  
+        - Formula: `KPI = 100 - (total_penalties / number_of_buses)`  
+        5. **Score range:** 0 = very inefficient / many issues, 100 = perfect bus plan.
+        """)
+
+
+
+    else:
+        st.info("Upload een Excel-bestand met het busplan in de sidebar om KPI's te bekijken.")
