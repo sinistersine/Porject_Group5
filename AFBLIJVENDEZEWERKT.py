@@ -697,7 +697,7 @@ with tab_errors:
                         st.write("No timetable violations detected.")
                         
 
-
+# Tab 5: KPI Dashboard (plan vs plan)
 # Tab 5: KPI Dashboard (plan vs plan)
 with tab_kpi:
     st.subheader("📊 KPI Dashboard — Old vs New busplan")
