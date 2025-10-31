@@ -471,23 +471,22 @@ with tab_analysis:
             st.write("### Bus summary: Total duration + Energy")
             st.dataframe(bus_summary.sort_values('bus'), use_container_width=True)
 
-            # ===== Summary per bus per activity =====
+            # ===== Summary per bus per activity (zonder energy) =====
             st.write("### Summary per bus per activity")
             summary = (
                 df.groupby(['bus', 'activity'], dropna=False)
                 .agg(
                     num_trips=('activity', 'count'),
-                    total_duration=('duration_minutes', 'sum'),
-                    total_energy=('energy consumption', lambda s: s.clip(lower=0).sum())
+                    total_duration=('duration_minutes', 'sum')
                 )
                 .reset_index()
             )
 
-            # eventueel netjes afronden
-            summary = summary.round({'total_duration': 2, 'total_energy': 2})
+            # eventueel afronden
+            summary = summary.round({'total_duration': 2})
 
             # Pivot zodat per bus de activiteiten als kolommen komen
-            pivot_summary = summary.pivot(index='bus', columns='activity', values=['num_trips','total_duration','total_energy'])
+            pivot_summary = summary.pivot(index='bus', columns='activity', values=['num_trips','total_duration'])
 
             # Flatten multiindex kolommen voor leesbaarheid
             pivot_summary.columns = [f"{agg}_{act}" for agg, act in pivot_summary.columns]
