@@ -528,9 +528,6 @@ with tab_analysis:
 with tab_errors:
     st.subheader("🚨 Errors")
 
-    uploaded_dist = st.file_uploader("Upload Distance Matrix Excel", type=["xlsx"], key="dist")
-    uploaded_tt = st.file_uploader("Upload Timetable Excel", type=["xlsx"], key="tt")
-
     st.write("Here is a list of errors detected in the planning (feasibility checks).")
 
         # Option: only show buses selected in the Gantt
@@ -545,7 +542,6 @@ with tab_errors:
         else:
             busplan = None
     except Exception as e:
-        st.error(f"Could not load bus plan: {e}")
         busplan = None
 
     # load timetable (if provided)
@@ -557,7 +553,6 @@ with tab_errors:
         else:
             timetable = None
     except Exception as e:
-        st.error(f"Could not load timetable: {e}")
         timetable = None
 
     if busplan is None:
