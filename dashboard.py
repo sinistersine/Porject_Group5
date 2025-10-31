@@ -673,20 +673,6 @@ with tab_kpi:
         )
         st.plotly_chart(fig_kpi, use_container_width=True)
 
-        # KPI tabel
-        st.write("### KPI Detail per Bus")
-        st.dataframe(kpi_df[['bus','total_minutes','idle_minutes','battery_violation','schedule_violation','kpi_score']], use_container_width=True)
-
-        # Timetable violations tonen
-        if timetable is not None:
-            st.write("### Timetable Violations per Bus")
-            for bus_id, violations in timetable_violations_detail.items():
-                if violations:
-                    with st.expander(f"Bus {bus_id} violations ({len(violations)} found)"):
-                        vt = pd.DataFrame(violations)
-                        st.dataframe(vt, use_container_width=True)
-                else:
-                    st.write(f"Bus {bus_id}: ✅ No timetable violations detected")
 
     else:
         st.info("Upload een Excel-bestand met het busplan in de sidebar om KPI's te bekijken.")
