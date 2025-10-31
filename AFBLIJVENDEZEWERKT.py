@@ -1,5 +1,4 @@
 # streamlit run dashboard.py  (dit is wat je in terminal typt om de app te runnen)
-from ftplib import all_errors
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -83,7 +82,7 @@ st.title("🚌 Bus Planning dashboard")
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
-tab_gantt, tab_visuals, tab_analysis, tab_errors = st.tabs(["📊 Gantt-chart", "📈 Visualizations", "🔍 Analysis", "🚨 Errors"])
+tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
 
 # Functie om Gantt Chart te plotten (één of meerdere bussen)
 def plot_gantt_interactive(df, selected_buses=None):
@@ -260,72 +259,187 @@ def get_timetable_diagnostics(bus_df, timetable_df):
         return {'ok': False, 'message': f"{len(violations)} timetable violation(s)", 'violations': violations}
     return {'ok': True, 'message': 'Timing OK', 'violations': []}
 
+def _normalize_activity(s):
+    return s.astype(str).str.lower().str.strip()
+
+def compute_activity_mix(df):
+    d = df.copy()
+    d['activity'] = _normalize_activity(d['activity'])
+    keep = d['activity'].isin(['service trip', 'material trip', 'idle'])
+    d = d[keep]
+    mix = (
+        d.groupby('activity', as_index=False)['duration_minutes']
+         .sum()
+         .rename(columns={'duration_minutes': 'minutes'})
+    )
+    total = mix['minutes'].sum()
+    if total <= 0:
+        mix['pct'] = 0.0
+    else:
+        mix['pct'] = 100 * mix['minutes'] / total
+    for a in ['service trip', 'material trip', 'idle']:
+        if a not in mix['activity'].values:
+            mix = pd.concat([mix, pd.DataFrame([{'activity': a, 'minutes': 0.0, 'pct': 0.0}])], ignore_index=True)
+    return mix
+
+def count_buses(df):
+    return int(pd.Series(df['bus']).dropna().nunique())
+
+def count_buses_make_it(df, cap_kwh=300, start_soc=100):
+    ok = 0
+    for bus_id, g in df.groupby('bus'):
+        diag = get_battery_diagnostics(g, cap_kwh, start_soc)
+        if diag['ok']:
+            ok += 1
+    return ok
+
+def count_service_trips_not_on_time(df, timetable):
+    if timetable is None or df is None or df.empty:
+        return 0
+    v = 0
+    for _, g in df.groupby('bus'):
+        tt = get_timetable_diagnostics(g, timetable)
+        if not tt['ok']:
+            for viol in tt['violations']:
+                curr = str(viol.get('curr_line', '')).lower()
+                if curr == 'service trip':
+                    v += 1
+    return v
+
+def compute_plan_kpi(df, timetable, cap_kwh=300, start_soc=100):
+    d = df.copy()
+    d['activity'] = _normalize_activity(d['activity'])
+
+    total_minutes = float(d['duration_minutes'].sum() or 0.0)
+    idle_minutes = float(d.loc[d['activity'] == 'idle', 'duration_minutes'].sum() or 0.0)
+    idle_ratio = (idle_minutes / total_minutes) if total_minutes > 0 else 0.0
+
+    n_buses = count_buses(d)
+    ok_buses = count_buses_make_it(d, cap_kwh, start_soc)
+    fail_buses = max(n_buses - ok_buses, 0)
+    battery_penalty = (fail_buses / n_buses) * 20 if n_buses > 0 else 0.0
+
+    late_service = count_service_trips_not_on_time(d, timetable)
+    total_service_trips = int(d.loc[d['activity'] == 'service trip'].shape[0])
+    sched_penalty = (late_service / total_service_trips) * 20 if total_service_trips > 0 else 0.0
+
+    kpi = 100 - (idle_ratio * 50 + battery_penalty + sched_penalty)
+    kpi = float(np.clip(kpi, 0, 100))
+
+    return {
+        'kpi': round(kpi, 1),
+        'total_minutes': total_minutes,
+        'idle_minutes': idle_minutes,
+        'idle_ratio': idle_ratio,
+        'n_buses': n_buses,
+        'ok_buses': ok_buses,
+        'late_service_trips': late_service,
+        'total_service_trips': total_service_trips,
+        'mix': compute_activity_mix(d)
+    }
+
+def render_plan_card(plan_title, df, timetable):
+    import plotly.express as px
+    st.markdown(f"### {plan_title}")
+
+    if df is None or df.empty:
+        st.info("No data.")
+        return
+
+    stats = compute_plan_kpi(df, timetable)
+
+    pie = px.pie(
+        stats['mix'],
+        names='activity',
+        values='minutes',
+        title="Time distribution",
+        hole=0.35,
+        color='activity',
+        color_discrete_map={
+            'service trip': ACTIVITY_COLORS.get('service trip', '#664EDC'),
+            'material trip': ACTIVITY_COLORS.get('material trip', '#D904B2'),
+            'idle': ACTIVITY_COLORS.get('idle', '#E7DF12'),
+        }
+    )
+    pie.update_traces(textposition='inside', texttemplate='%{label}<br>%{percent:.0%}')
+    st.plotly_chart(pie, use_container_width=True)
+
+    st.metric(label="KPI score (plan)", value=f"{stats['kpi']}/100")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Service trips not on time", f"{stats['late_service_trips']}")
+    with c2:
+        st.metric("Buses in plan", f"{stats['n_buses']}")
+    with c3:
+        st.metric("Buses that make charge", f"{stats['ok_buses']} / {stats['n_buses']}")
+
+# Tab 1: Gantt Chart
 with tab_gantt:
     st.subheader("📊 Gantt Chart")
+
+    # Veilig initialiseren
+    df = None
+    selected_buses = []
+
     if uploaded_file:
-        df = load_data(uploaded_file)
-
-        # Lijst van unieke bussen
-        bus_options = sorted(df['bus'].dropna().unique())
-        selected_buses = st.multiselect(
-            "Select one or multiple busses (or 'All busses')",
-            options=[0] + bus_options,
-            default=[0],
-            format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses",
-            key="selected_buses"
-        )
-
-
-
-        # ---- Run feasibility checks for displayed buses ----
-        # determine bus ids to check
-        if 0 in selected_buses or not selected_buses:
-            buses_to_check = sorted(df['bus'].dropna().unique())
-        else:
-            buses_to_check = [b for b in selected_buses if b in df['bus'].values]
-
-        # try to load timetable from uploaded or local file
-        timetable = None
         try:
-            g = globals()
-            if 'uploaded_tt' in g and g['uploaded_tt'] is not None:
-                timetable = pd.read_excel(g['uploaded_tt'], index_col=0)
+            # Data laden
+            df = load_data(uploaded_file)
+
+            # Bus multiselect
+            bus_options = sorted(df['bus'].dropna().unique())
+            selected_buses = st.multiselect(
+                "Selecteer bus(s) (of 'All busses')",
+                options=[0] + bus_options,
+                default=[0],
+                format_func=lambda x: f"Bus {int(x)}" if x != 0 else "All busses"
+            )
+
+            # Feasibility checks per bus
+            timetable = None
+            if 'uploaded_tt' in st.session_state:
+                timetable = st.session_state['uploaded_tt']
             elif os.path.exists('Timetable.xlsx'):
                 timetable = pd.read_excel('Timetable.xlsx', index_col=0)
-            else:
-                timetable = None
-        except Exception:
-            timetable = None
 
-        any_fail = False
-        # read cap_kwh and start_soc if available (from visualization controls), otherwise defaults
-        g = globals()
-        cap = g.get('cap_kwh', 300.0)
-        soc0 = g.get('start_soc', 100)
-        for bus_id in buses_to_check:
-            bus_df = df[df['bus'] == bus_id].copy()
-            ok_batt, batt_msg = check_bus_battery_survival(bus_df, cap, soc0)
-            if not ok_batt:
-                st.error(batt_msg)
-                any_fail = True
-                break
-            if timetable is not None:
-                ok_time, time_msg = check_bus_timetable_feasible(bus_df, timetable)
-                if not ok_time:
-                    st.error(time_msg)
+            any_fail = False
+            cap = st.session_state.get('cap_kwh', 300.0)
+            soc0 = st.session_state.get('start_soc', 100)
+            if 0 in selected_buses:
+                buses_to_check = sorted(df['bus'].dropna().unique())
+            else:
+                buses_to_check = [b for b in selected_buses if b in df['bus'].values]
+
+            for bus_id in buses_to_check:
+                bus_df = df[df['bus'] == bus_id].copy()
+                ok_batt, batt_msg = check_bus_battery_survival(bus_df, cap, soc0)
+                if not ok_batt:
+                    st.error(batt_msg)
                     any_fail = True
                     break
+                if timetable is not None:
+                    ok_time, time_msg = check_bus_timetable_feasible(bus_df, timetable)
+                    if not ok_time:
+                        st.error(time_msg)
+                        any_fail = True
+                        break
 
-        if not any_fail:
-            st.success("Selected busplan(s) appear feasible.")
+            if not any_fail:
+                st.success("Selected busplan(s) appear feasible.")
 
-    fig = plot_gantt_interactive(df, selected_buses)
-    st.plotly_chart(fig, use_container_width=True)
+            # Plot Gantt chart
+            fig = plot_gantt_interactive(df, selected_buses)
+            st.plotly_chart(fig, use_container_width=True)
 
+        except Exception as e:
+            st.error(f"Kon de Gantt-chart niet weergeven: {e}")
 
-# Tab 2: Visualizations
+    else:
+        st.info("Upload een Excel-bestand in de sidebar om de Gantt Chart te zien.")
+# Tab 2: Visualisations
 with tab_visuals:
-    st.subheader("📈 Visualization")
+    st.subheader("📈 Visualisation")
 
     if uploaded_file:
         df = load_data(uploaded_file)
@@ -449,87 +563,60 @@ with tab_analysis:
     if uploaded_file:
         df = load_data(uploaded_file)          
 
-
-        # === NIEUW BLOK: Gemiddelde duur per activiteit per lijn ===
+        # lijn als string (voor latere analyses)
         df['line_str'] = df['line'].astype(str).str.replace('.0', '', regex=False)
 
-        avg_duration_per_line_activity = (
-            df.groupby(['line_str', 'activity'], dropna=False)['duration_minutes']
-              .mean()
-              .reset_index()
-              .rename(columns={'line_str': 'line'})
+        # ===== Total duration per bus =====
+        total_duration_per_bus = (
+            df.groupby('bus', as_index=False)['duration_minutes']
+              .sum()
+              .rename(columns={'duration_minutes': 'total_duration_minutes'})
         )
 
-        st.write("### Average duration per activity **per bus** (in minutes)")
-        avg_duration_per_bus_activity = (
-            df.groupby(['bus', 'activity'], dropna=False)['duration_minutes']
-            .mean()
-            .reset_index()
-            .sort_values(['bus', 'activity'])
-        )
-        
-        st.dataframe(
-            avg_duration_per_bus_activity.pivot(
-                index='bus',
-                columns='activity',
-                values='duration_minutes'
-                ).round(2)
-             .rename(columns=lambda c: ACTIVITY_DISPLAY.get(str(c).lower(), c)),
-            use_container_width=True
-        )
-
-        # Alleen material trips per lijn
-        mat = df['activity'].str.lower().eq('material trip')
-        avg_material_per_line = (
-            df.loc[mat]
-              .groupby('line_str', dropna=False)['duration_minutes']
-              .mean()
-              .reset_index()
-              .rename(columns={'line_str': 'line', 'duration_minutes': 'avg_material_duration_min'})
-              .sort_values('line')
-        )
-
-
-
-        st.write("### Total duration per bus (in minutes)")
-        total_duration_per_bus = (df.groupby('bus', as_index=False)['duration_minutes']
-                                    .sum()
-                                    .rename(columns={'duration_minutes': 'total_duration_minutes'}))
-        st.dataframe(total_duration_per_bus)
-
-        # Energie-analyse (nu al gefixt voor material trips)
+        # ===== Energie-analyse =====
         if 'energy consumption' in df.columns:
             per_bus = df.groupby('bus', as_index=False).agg(
-                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum()),
-                charged_kWh =('energy consumption', lambda s: (-s.clip(upper=0)).sum()),
-                netto_kWh   =('energy consumption', 'sum'),
+                consumption_kWh=('energy consumption', lambda s: s.clip(lower=0).sum())
             )
-            BATTERY_KWH = 300.0
-            per_bus['end_SOC_%'] = (100 - (per_bus['netto_kWh'] / BATTERY_KWH) * 100).clip(0, 100)
 
-            st.write("### Energy per bus (kWh) + end-SOC estimate")
-            st.dataframe(per_bus.sort_values('netto_kWh', ascending=False), use_container_width=True)
+            # ===== Merge total duration + energie =====
+            bus_summary = pd.merge(total_duration_per_bus, per_bus, on='bus', how='outer')
 
-            st.write("### Audit: inspection of material trips")
-            audit_display = df.loc[df['energy_expected_material'].notna(),
-                                   ['activity','start time','end time','duration_minutes',
-                                    'energy_expected_material','energy consumption',
-                                    'energy_diff','energy_match']].copy()
-            audit_display['activity'] = audit_display['activity'].astype(str).str.lower().map(ACTIVITY_DISPLAY).fillna(audit_display['activity'])
-            st.dataframe(audit_display)
-        else:
-            st.info("Column 'energy consumption' (energy usage) wasn't found in the file.")
+            st.write("### Total duration + Energy per bus")
+            st.dataframe(bus_summary.sort_values('bus'), use_container_width=True)
+
+            # ===== Summary per bus per activity (zonder energy) =====
+            st.write("### Summary per bus per activity")
+            summary = (
+                df.groupby(['bus', 'activity'], dropna=False)
+                .agg(
+                    num_trips=('activity', 'count'),
+                    total_duration=('duration_minutes', 'sum')
+                )
+                .reset_index()
+            )
+
+            # eventueel afronden
+            summary = summary.round({'total_duration': 2})
+
+            # Pivot zodat per bus de activiteiten als kolommen komen
+            pivot_summary = summary.pivot(index='bus', columns='activity', values=['num_trips','total_duration'])
+
+            # Flatten multiindex kolommen voor leesbaarheid
+            pivot_summary.columns = [f"{agg}_{act}" for agg, act in pivot_summary.columns]
+
+            st.dataframe(pivot_summary.sort_values('bus'), use_container_width=True)
+
+
     else:
         st.info("Upload an Excel file in the sidebar to see the analysis.")
+
 
 # Tab 4: Fouten
 # hier kunnen we alle constraints in zetten waar alle data aan moet voldoen
 # en als er iets niet klopt, dat dat hier getoond wordt
 with tab_errors:
     st.subheader("🚨 Errors")
-
-    uploaded_dist = st.file_uploader("Upload Distance Matrix Excel", type=["xlsx"], key="dist")
-    uploaded_tt = st.file_uploader("Upload Timetable Excel", type=["xlsx"], key="tt")
 
     st.write("Here is a list of errors detected in the planning (feasibility checks).")
 
@@ -545,7 +632,6 @@ with tab_errors:
         else:
             busplan = None
     except Exception as e:
-        st.error(f"Could not load bus plan: {e}")
         busplan = None
 
     # load timetable (if provided)
@@ -557,7 +643,6 @@ with tab_errors:
         else:
             timetable = None
     except Exception as e:
-        st.error(f"Could not load timetable: {e}")
         timetable = None
 
     if busplan is None:
@@ -610,3 +695,56 @@ with tab_errors:
                         st.dataframe(vt, use_container_width=True)
                     else:
                         st.write("No timetable violations detected.")
+                        
+
+# Tab 5: KPI Dashboard (plan vs plan)
+with tab_kpi:
+    st.subheader("📊 KPI Dashboard — Old vs New busplan")
+
+    # 1) Één timetable voor beide plannen (voor 'on-time' checks)
+    uploaded_tt_file = st.file_uploader(
+        "Upload Timetable (Excel) — gebruikt voor on-time checks",
+        type=["xlsx"],
+        key="tt_upload_global"
+    )
+    timetable = None
+    if uploaded_tt_file:
+        try:
+            timetable = pd.read_excel(uploaded_tt_file, index_col=0)
+            st.success("Timetable uploaded successfully!")
+        except Exception as e:
+            st.error(f"Timetable lezen faalde: {e}")
+
+    # 2) Links: OUD plan (komt uit de sidebar-uploader). Rechts: NIEUW plan (extra uploader).
+    col_old, col_new = st.columns(2, gap="large")
+
+    # --- OLD PLAN (links) ---
+    with col_old:
+        st.markdown("#### Old busplan (from sidebar)")
+        if uploaded_file:
+            try:
+                old_df = load_data(uploaded_file)
+                # toont: Pie (service/material/idle), KPI score (plan), + 3 metrics
+                render_plan_card("OLD — KPI", old_df, timetable)
+            except Exception as e:
+                st.error(f"Old busplan verwerken mislukte: {e}")
+        else:
+            st.info("Upload het **oude** busplan in de sidebar om KPIs te zien.")
+
+    # --- NEW PLAN (rechts) ---
+    with col_new:
+        st.markdown("#### New busplan (upload hier)")
+        new_upload = st.file_uploader(
+            "Upload NEW busplan (Excel)",
+            type=["xlsx"],
+            key="new_busplan_upload"
+        )
+        if new_upload:
+            try:
+                new_df = load_data(new_upload)
+                # idem: Pie + KPI + metrics
+                render_plan_card("NEW — KPI", new_df, timetable)
+            except Exception as e:
+                st.error(f"New busplan verwerken mislukte: {e}")
+        else:
+            st.info("Upload het **nieuwe** busplan om te vergelijken.")
