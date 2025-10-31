@@ -82,9 +82,7 @@ st.title("🚌 Bus Planning dashboard")
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
 # Tabs bovenaan
-
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
-
 
 # Functie om Gantt Chart te plotten (één of meerdere bussen)
 def plot_gantt_interactive(df, selected_buses=None):
@@ -584,33 +582,36 @@ with tab_errors:
                         st.write("No timetable violations detected.")
                         
 
-# Tab 5: KPI dashboard
+# Tab 5: KPI Dashboard
 with tab_kpi:
     st.subheader("📊 KPI Comparison")
 
     if uploaded_file:
         df = load_data(uploaded_file)
-
         st.write("### KPI Dashboard")
 
-        # --- Parameters ---
-        WEIGHTS = {
-            "ontime": 0.5,
-            "few_extra_trips": 0.3,
-            "few_buses": 0.2
-        }
+        # --- Upload timetable IN KPI tab ---
+        uploaded_tt = st.file_uploader(
+            "Upload de timetable (Excel) voor KPI-analyse",
+            type=["xlsx"],
+            key="timetable_upload_kpi_tab"
+        )
 
-        # --- 1️⃣ KPI: Bus op tijd ---
-        # Als we geen timetable hebben, simuleren we dat alles 'on time' is.
-        timetable = None
-        if 'uploaded_tt' in st.session_state:
-            timetable = st.session_state['uploaded_tt']
-        elif os.path.exists('Timetable.xlsx'):
-            timetable = pd.read_excel('Timetable.xlsx', index_col=0)
+        if uploaded_tt:
+            timetable = pd.read_excel(uploaded_tt, index_col=0)
+            st.session_state['uploaded_tt'] = timetable
+            st.success("Timetable succesvol geladen!")
+        else:
+            timetable = st.session_state.get('uploaded_tt', None)
+            if timetable is None:
+                st.info("Upload een timetable om KPI's te berekenen.")
 
-        ontime_scores = []
-        for bus, g in df.groupby("bus"):
-            if timetable is not None:
+        # --- Alleen doorgaan als timetable beschikbaar is ---
+        if timetable is not None:
+
+            # --- 1️⃣ KPI: Bus op tijd ---
+            ontime_scores = []
+            for bus, g in df.groupby("bus"):
                 tt_diag = get_timetable_diagnostics(g, timetable)
                 total_checks = len(g) - 1
                 if total_checks <= 0:
@@ -618,68 +619,89 @@ with tab_kpi:
                 else:
                     violations = len(tt_diag["violations"]) if tt_diag and not tt_diag["ok"] else 0
                     pct_ontime = max(0.0, 1 - (violations / total_checks))
+                ontime_scores.append({"bus": bus, "ontime_score": pct_ontime})
+            df_ontime = pd.DataFrame(ontime_scores)
+
+            # --- 2️⃣ KPI: Zo min mogelijk overige trips ---
+            trip_counts = (
+                df.groupby(["bus", "activity"])["duration_minutes"]
+                  .sum()
+                  .reset_index()
+            )
+            total_per_bus = trip_counts.groupby("bus")["duration_minutes"].sum()
+            service_per_bus = trip_counts[trip_counts["activity"] == "service trip"].groupby("bus")["duration_minutes"].sum()
+            share_service = (service_per_bus / total_per_bus).fillna(0)
+            df_other = pd.DataFrame({
+                "bus": share_service.index,
+                "few_extra_trips_score": share_service.values
+            })
+
+            # --- 3️⃣ KPI: Zo min mogelijk bussen ---
+            total_buses = df["bus"].nunique()
+            df_few_buses = pd.DataFrame({
+                "bus": df["bus"].unique(),
+                "few_buses_score": 1 - (1 / total_buses)
+            })
+
+            # --- 4️⃣ KPI: Service trips vs Timetable (ALLE BUSSEN SAMEN) ---
+            service_trips = df[df['activity'] == 'service trip'].sort_values('start time').reset_index(drop=True)
+            if not service_trips.empty:
+                matches = 0
+                for _, row in service_trips.iterrows():
+                    start_loc = row.get('start location')
+                    end_loc = row.get('end location')
+                    try:
+                        expected = timetable.loc[start_loc, end_loc]
+                        if not pd.isna(expected):
+                            matches += 1
+                    except Exception:
+                        pass
+                service_trip_match_score = matches / len(service_trips)
             else:
-                pct_ontime = 1.0  # fallback: alles op tijd
-            ontime_scores.append({"bus": bus, "ontime_score": pct_ontime})
+                service_trip_match_score = 1.0
 
-        df_ontime = pd.DataFrame(ontime_scores)
+            # --- Combineer KPI's in één dataframe voor overzicht ---
+            kpi_summary = pd.DataFrame({
+                "KPI": [
+                    "Op tijd (gemiddeld busplan)",
+                    "Weinig overige trips (gemiddeld)",
+                    "Weinig bussen",
+                    "Service trips match timetable"
+                ],
+                "Score": [
+                    df_ontime['ontime_score'].mean(),
+                    df_other['few_extra_trips_score'].mean(),
+                    1 - (1 / total_buses),
+                    service_trip_match_score
+                ]
+            })
 
-        # --- 2️⃣ KPI: Zo min mogelijk overige trips ---
-        # Beschouwen we als: aandeel van service trips t.o.v. totaal
-        trip_counts = (
-            df.groupby(["bus", "activity"])["duration_minutes"]
-              .sum()
-              .reset_index()
-        )
+            # --- Totale score berekenen met gewichten ---
+            WEIGHTS = [0.4, 0.25, 0.15, 0.2]
+            kpi_summary['Gewogen'] = kpi_summary['Score'] * WEIGHTS
+            total_score = kpi_summary['Gewogen'].sum()
 
-        total_per_bus = trip_counts.groupby("bus")["duration_minutes"].sum()
-        service_per_bus = trip_counts[trip_counts["activity"] == "service trip"].groupby("bus")["duration_minutes"].sum()
-        share_service = (service_per_bus / total_per_bus).fillna(0)
+            # --- Toon resultaten ---
+            st.write("### KPI Scores (Alle bussen samen)")
+            st.dataframe(kpi_summary.round(3), use_container_width=True)
+            st.write(f"**Totale KPI Score:** {total_score:.3f} (0–1)")
 
-        df_other = pd.DataFrame({
-            "bus": share_service.index,
-            "few_extra_trips_score": share_service.values
-        })
+            # --- Visualisatie ---
+            fig = px.bar(
+                kpi_summary,
+                x="KPI",
+                y="Score",
+                text="Score",
+                title="Overzicht KPI's alle bussen samen",
+                color="Score",
+                color_continuous_scale="Tealgrn"
+            )
+            fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+            fig.update_layout(yaxis_range=[0,1], height=400)
+            st.plotly_chart(fig, use_container_width=True)
 
-        # --- 3️⃣ KPI: Zo min mogelijk bussen ---
-        # Minder bussen = beter → normaliseren
-        total_buses = df["bus"].nunique()
-        df_few_buses = pd.DataFrame({
-            "bus": df["bus"].unique(),
-            "few_buses_score": 1 - (1 / total_buses)  # Elke bus individueel krijgt iets lagere score als er meer bussen zijn
-        })
-
-        # --- Combineer alle KPI's ---
-        kpi = df_ontime.merge(df_other, on="bus", how="outer").merge(df_few_buses, on="bus", how="outer")
-        for col in ["ontime_score", "few_extra_trips_score", "few_buses_score"]:
-            kpi[col] = kpi[col].fillna(0)
-
-        # --- Bereken totaalscore ---
-        kpi["total_score"] = (
-            kpi["ontime_score"] * WEIGHTS["ontime"]
-            + kpi["few_extra_trips_score"] * WEIGHTS["few_extra_trips"]
-            + kpi["few_buses_score"] * WEIGHTS["few_buses"]
-        )
-
-        # --- Toon resultaten ---
-        st.write("### KPI Scores per bus")
-        st.dataframe(kpi.round(3).sort_values("total_score", ascending=False), use_container_width=True)
-
-        # --- Visualisatie ---
-        fig = px.bar(
-            kpi.sort_values("total_score", ascending=False),
-            x="bus",
-            y="total_score",
-            color="total_score",
-            text="total_score",
-            title="Overall KPI Score per Bus",
-            color_continuous_scale="Tealgrn",
-        )
-        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-        fig.update_layout(yaxis_title="Total KPI Score (0–1)", xaxis_title="Bus", height=400)
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("KPI-samenstelling: 🕒 Op tijd (50%) · 🚫 Weinig overige trips (30%) · 🚌 Weinig bussen (20%)")
-
+            st.caption(
+                "KPI-samenstelling: 🕒 Op tijd (40%) · 🚫 Weinig overige trips (25%) · 🚌 Weinig bussen (15%) · ✅ Service trips match timetable (20%)"
+            )
     else:
-        st.info("Upload een Excel-bestand in de sidebar om de KPI's te berekenen.")
+        st.info("Upload eerst een Excel-bestand met het busplan om de KPI's te berekenen.")
