@@ -1,4 +1,4 @@
-# streamlit run dashboard.py  (dit is wat je in terminal typt om de app te runnen)
+# streamlit run ProjectGroep5ECHTECODE.py  (dit is wat je in terminal typt om de app te runnen)
 import streamlit as st
 import pandas as pd
 import plotly.express as px
