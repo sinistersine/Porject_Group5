@@ -79,6 +79,14 @@ st.title("🚌 Bus Planning dashboard")
 # Sidebar: upload Excel-bestand
 uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
 
+# Global timetable uploader (optional) — make `uploaded_tt` available to all tabs
+uploaded_tt = st.sidebar.file_uploader("Upload Timetable (Excel) (optional)", type=["xlsx"], key="uploaded_tt")
+if uploaded_tt:
+    # store in session_state so other parts can reuse without needing the local variable
+    st.session_state['uploaded_tt'] = uploaded_tt
+else:
+    uploaded_tt = st.session_state.get('uploaded_tt', None)
+
 # Tabs bovenaan
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI"])
 

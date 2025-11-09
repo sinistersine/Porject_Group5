@@ -1,9 +1,13 @@
-# streamlit run dashboard.py  (dit is wat je in terminal typt om de app te runnen)
+# streamlit run ProjectGroep5ECHTECODE.py  (dit is wat je in terminal typt om de app te runnen)
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
 import numpy as np
+# Pagina-instellingen
+st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
+st.title("🚌 Bus Planning dashboard")
+
 
 # === material-trip energy rule ===
 BASE_MIN, BASE_KWH = 20, 10.32   # 20 min → 10.32 kWh
@@ -74,12 +78,43 @@ def load_data(file):
 
 # command to see website: streamlit run dashboard.py
 
-# Pagina-instellingen
-st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
-st.title("🚌 Bus Planning dashboard")
+# Initialize session state for key variables if they don't exist
+if 'df' not in st.session_state:
+    st.session_state['df'] = None
+if 'timetable_df' not in st.session_state:
+    st.session_state['timetable_df'] = None
 
-# Sidebar: upload Excel-bestand
-uploaded_file = st.sidebar.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
+
+# Sidebar: Excel file uploaders and preview
+with st.sidebar:
+    # Busplan uploader with safe handling
+    uploaded_file = st.file_uploader("1) Upload the busplan (Excel)", type=["xlsx"], key="busplan")
+    if uploaded_file is not None:
+        try:
+            df = load_data(uploaded_file)
+            st.session_state['df'] = df  # Cache the DataFrame
+            st.success("File loaded successfully!")
+            with st.expander("Preview data"):
+                st.dataframe(df, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading file: {str(e)}")
+            st.session_state['df'] = None
+    else:
+        st.info("Please upload a busplan Excel file to begin.")
+
+    # Global timetable uploader with safe handling
+    uploaded_tt = st.file_uploader("Upload Timetable (Excel) (optional)", type=["xlsx"], key="uploaded_tt")
+    if uploaded_tt is not None:
+        try:
+            timetable_df = pd.read_excel(uploaded_tt, index_col=0)
+            st.session_state['timetable_df'] = timetable_df
+            st.success("Timetable loaded successfully!")
+        except Exception as e:
+            st.error(f"Error loading timetable: {str(e)}")
+            st.session_state['timetable_df'] = None
+            
+# Make uploaded_tt globally available but safely
+uploaded_tt = st.session_state.get('timetable_df', None)
 
 # Tabs bovenaan
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(["📊 Gantt-chart", "📈 Visualisations", "🔍 Analysis", "🚨 Errors", "📊 KPI Dashboard"])
@@ -369,14 +404,12 @@ def render_plan_card(plan_title, df, timetable):
 with tab_gantt:
     st.subheader("📊 Gantt Chart")
 
-    # Veilig initialiseren
-    df = None
+    # Get cached DataFrame from session state
+    df = st.session_state.get('df')
     selected_buses = []
 
-    if uploaded_file:
+    if df is not None:
         try:
-            # Data laden
-            df = load_data(uploaded_file)
 
             # Bus multiselect
             bus_options = sorted(df['bus'].dropna().unique())
@@ -388,11 +421,13 @@ with tab_gantt:
             )
 
             # Feasibility checks per bus
-            timetable = None
-            if 'uploaded_tt' in st.session_state:
-                timetable = st.session_state['uploaded_tt']
-            elif os.path.exists('Timetable.xlsx'):
-                timetable = pd.read_excel('Timetable.xlsx', index_col=0)
+            timetable = st.session_state.get('timetable_df')
+            if timetable is None and os.path.exists('Timetable.xlsx'):
+                try:
+                    timetable = pd.read_excel('Timetable.xlsx', index_col=0)
+                    st.session_state['timetable_df'] = timetable
+                except Exception as e:
+                    st.warning(f"Could not load local Timetable.xlsx: {str(e)}")
 
             any_fail = False
             cap = st.session_state.get('cap_kwh', 300.0)
