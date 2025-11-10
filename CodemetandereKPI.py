@@ -302,7 +302,18 @@ with st.sidebar:
     else:
         st.info("Upload a busplan Excel to begin.")
 
-    
+
+    uploaded_tt = st.file_uploader("2) Upload Timetable (Excel)", type=["xlsx"], key="uploaded_tt")
+    if uploaded_tt is not None:
+        try:
+            timetable_df = load_timetable(uploaded_tt)
+            st.session_state['timetable_df'] = timetable_df
+            st.success("Timetable loaded!")
+        except Exception as e:
+            st.error(f"Error loading timetable: {str(e)}")
+            st.session_state['timetable_df'] = None
+
+uploaded_tt = st.session_state.get('timetable_df', None)
 
 # ===================== TABS =====================
 tab_gantt, tab_visuals, tab_analysis, tab_errors, tab_kpi = st.tabs(
