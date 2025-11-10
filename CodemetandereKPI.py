@@ -1,11 +1,21 @@
 # streamlit run CodemetandereKPI.py
-try:
-    import plotly.express as px  # noqa: F401
-except ModuleNotFoundError:
-    import sys, subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly==5.24.1"])
-    import plotly.express as px  # noqa: F401
-    
+# ---- bootstrap & debug env (put this at the VERY top) ----
+import sys, subprocess, pkgutil
+
+def _has(pkg_name: str) -> bool:
+    return any(m.name == pkg_name for m in pkgutil.iter_modules())
+
+print("PYTHON:", sys.version)
+
+if not _has("plotly"):
+    print("plotly not found -> installing…")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly==5.20.0"])
+else:
+    print("plotly already present")
+
+# now it is safe to import
+import plotly.express as px
+# ----------------------------------------------------------
 import streamlit as st
 import pandas as pd
 import plotly.express as px
