@@ -5,6 +5,12 @@ import plotly.express as px
 import os
 import numpy as np
 
+try:
+    import plotly.express as px  # noqa: F401
+except ModuleNotFoundError:
+    import sys, subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly==5.24.1"])
+    import plotly.express as px  # noqa: F401
 # ===================== PAGE =====================
 st.set_page_config(page_title="Bus Planning dashboard", layout="wide")
 st.title("🚌 Bus Planning dashboard")
