@@ -302,6 +302,7 @@ with st.sidebar:
     else:
         st.info("Upload a busplan Excel to begin.")
 
+
     uploaded_tt = st.file_uploader("2) Upload Timetable (Excel)", type=["xlsx"], key="uploaded_tt")
     if uploaded_tt is not None:
         try:
