@@ -262,11 +262,11 @@ def compute_plan_kpi(df, timetable, cap_kwh=CAP_DEFAULT, start_soc=SOC0_DEFAULT)
         total_transitions += trans
         sched_viol_transitions += 0 if tt_diag['ok'] else len(tt_diag['violations'])
 
-    battery_penalty = (batt_viol / n_buses) * 20.0 if n_buses > 0 else 0.0
+    battery_penalty = (batt_viol / n_buses) * 30.0 if n_buses > 0 else 0.0
     sched_ratio = (sched_viol_transitions / total_transitions) if total_transitions > 0 else 0.0
-    schedule_penalty = sched_ratio * 20.0
+    schedule_penalty = sched_ratio * 50.0
 
-    kpi = 100 - (idle_ratio * 50.0 + battery_penalty + schedule_penalty)
+    kpi = 100 - (idle_ratio * 20.0 + battery_penalty + schedule_penalty)
     kpi = float(np.clip(kpi, 0, 100))
 
     return {
