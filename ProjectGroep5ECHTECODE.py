@@ -840,4 +840,6 @@ with tab_kpi:
 
     else:
         st.info("Upload an Excel file with the bus plan in the sidebar to view KPIIs.")
+        
+
 
