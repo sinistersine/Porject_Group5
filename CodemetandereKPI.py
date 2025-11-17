@@ -67,7 +67,7 @@ def _ensure_rollover(start, end):
 # ===================== LOADERS =====================
 @st.cache_data
 def load_data(file):
-    df = pd.read_excel(file, sheet_name="Sheet1")
+    df = pd.read_excel(file)
 
     # times -> datetime
     start = _safe_to_dt(df['start time'])
@@ -133,7 +133,7 @@ def lookup_tt_minutes(tt, a, b):
 def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
     """
     Returns: dict(ok, message, violations[list])
-    violation item: {idx, prev_end, curr_start, prev_end_loc, curr_start_loc, required_min, expected_min, need_min, reason}
+    violation item: {bus, prev_end, curr_start, prev_end_loc, curr_start_loc, need_min, reason}
     """
     g = bus_df.sort_values('start time').reset_index(drop=True).copy()
     violations = []
@@ -145,7 +145,7 @@ def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
         curr_start = curr.get('start time')
 
         if pd.isna(prev_end) or pd.isna(curr_start):
-            violations.append({'idx': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
+            violations.append({'bus': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
             continue
 
         required = (curr_start - prev_end).total_seconds() / 60.0
@@ -153,7 +153,7 @@ def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
 
         if exp is None:
             violations.append({
-                'idx': i,
+                'bus': i,
                 'reason': 'missing_timetable',
                 'prev_end_loc': prev.get('end location'),
                 'curr_start_loc': curr.get('start location'),
@@ -164,13 +164,12 @@ def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
         need = exp + buffer_min
         if required + 1e-6 < need:
             violations.append({
-                'idx': i,
+                'bus': i,
                 'reason': 'insufficient_travel_time',
                 'prev_end': prev_end, 'curr_start': curr_start,
                 'prev_end_loc': prev.get('end location'),
                 'curr_start_loc': curr.get('start location'),
-                'required_min': round(required, 2),
-                'expected_min': round(exp, 2),
+                
                 'need_min': round(need, 2)
             })
 
@@ -187,7 +186,7 @@ def get_battery_diagnostics(bus_df, cap_kwh=CAP_DEFAULT, start_soc_percent=SOC0_
     battery = float(cap_kwh) * (float(start_soc_percent) / 100.0)
     rows = []
     g = bus_df.sort_values('start time').reset_index(drop=True).copy()
-    for idx, r in g.iterrows():
+    for bus, r in g.iterrows():
         cons = pd.to_numeric(r.get('energy consumption', 0), errors='coerce')
         if pd.isna(cons):
             cons = 0.0
