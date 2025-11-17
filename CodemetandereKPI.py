@@ -133,7 +133,7 @@ def lookup_tt_minutes(tt, a, b):
 def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
     """
     Returns: dict(ok, message, violations[list])
-    violation item: {bus, prev_end, curr_start, prev_end_loc, curr_start_loc, need_min, reason}
+    violation item: {idx, prev_end, curr_start, prev_end_loc, curr_start_loc, need_min, reason}
     """
     g = bus_df.sort_values('start time').reset_index(drop=True).copy()
     violations = []
@@ -145,7 +145,7 @@ def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
         curr_start = curr.get('start time')
 
         if pd.isna(prev_end) or pd.isna(curr_start):
-            violations.append({'bus': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
+            violations.append({'idx': i, 'reason': 'missing_time', 'prev_end': prev_end, 'curr_start': curr_start})
             continue
 
         required = (curr_start - prev_end).total_seconds() / 60.0
@@ -153,18 +153,17 @@ def get_timetable_diagnostics(bus_df, timetable_df, buffer_min=BUFFER_MIN):
 
         if exp is None:
             violations.append({
-                'bus': i,
+                'idx': i,
                 'reason': 'missing_timetable',
                 'prev_end_loc': prev.get('end location'),
-                'curr_start_loc': curr.get('start location'),
-                'required_min': round(required, 2)
+                'curr_start_loc': curr.get('start location')
             })
             continue
 
         need = exp + buffer_min
         if required + 1e-6 < need:
             violations.append({
-                'bus': i,
+                'idx': i,
                 'reason': 'insufficient_travel_time',
                 'prev_end': prev_end, 'curr_start': curr_start,
                 'prev_end_loc': prev.get('end location'),
